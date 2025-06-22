@@ -56,20 +56,18 @@ export default function CampaignsPage() {
     }
 
     return (
-        <MainLayout>
-            <div className="container mx-auto py-10">
-                 <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-3xl font-bold">Campaigns</h1>
-                    <Button onClick={() => router.push('/campaigns/create')}>
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        New Campaign
-                    </Button>
-                </div>
-                <DataTable
-                    columns={columns}
-                    data={campaigns || []}
-                />
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <h1 className="text-3xl font-bold">Campaigns</h1>
+                <Button onClick={() => router.push('/campaigns/create')}>
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    New Campaign
+                </Button>
             </div>
-        </MainLayout>
+            <DataTable
+                columns={columns}
+                data={campaigns || []}
+            />
+        </div>
     );
 }

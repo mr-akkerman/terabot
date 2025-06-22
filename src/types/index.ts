@@ -112,3 +112,14 @@ export interface Campaign {
   status: 'draft' | 'loading-users' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'idle'; // Текущий статус
   progress?: CampaignProgress; // Прогресс выполнения
 }
+
+/**
+ * Статус отправки конкретному получателю.
+ */
+export interface CampaignRecipient {
+  campaignId: string;
+  userId: number;
+  status: 'pending' | 'success' | 'failed';
+  error?: string;
+  timestamp: Date;
+}

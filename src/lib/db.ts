@@ -1,6 +1,6 @@
 'use client'
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import type { Campaign, UserBase, Bot } from '@/types';
+import type { Campaign, UserBase, Bot, CampaignRecipient } from '@/types';
 
 // 1. Определение схемы базы данных
 interface TerabotDB extends DBSchema {
@@ -30,6 +30,7 @@ interface TerabotDB extends DBSchema {
       userId: number;
       status: 'pending' | 'success' | 'failed';
       error?: string;
+      timestamp: Date;
     };
     indexes: { campaignId: string };
   };
@@ -165,7 +166,8 @@ export const campaignRecipientStore = {
     ): Promise<void> {
         const db = await initDB();
         const tx = db.transaction('campaignRecipients', 'readwrite');
-        await Promise.all(recipients.map(r => tx.store.put(r)));
+        const itemsToAdd = recipients.map(r => ({ ...r, timestamp: new Date() }));
+        await Promise.all(itemsToAdd.map(r => tx.store.put(r)));
         await tx.done;
     },
 
@@ -182,6 +184,7 @@ export const campaignRecipientStore = {
         if (recipient) {
             recipient.status = status;
             if (error) recipient.error = error;
+            recipient.timestamp = new Date();
             await store.put(recipient);
         }
         await tx.done;
@@ -196,6 +199,15 @@ export const campaignRecipientStore = {
         );
     },
     
+    async getByCampaignId(campaignId: string): Promise<CampaignRecipient[]> {
+        const db = await initDB();
+        return db.getAllFromIndex(
+            'campaignRecipients',
+            'campaignId',
+            IDBKeyRange.only(campaignId)
+        );
+    },
+
     async clearForCampaign(campaignId: string): Promise<void> {
         const db = await initDB();
         const tx = db.transaction('campaignRecipients', 'readwrite');
