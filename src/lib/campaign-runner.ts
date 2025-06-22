@@ -1,5 +1,6 @@
 import type { Campaign, UserBase, Bot, CampaignProgress } from '@/types';
-import { TelegramAPI, TelegramApiError, SendMessagePayload, SendPhotoPayload } from '@/utils/telegram';
+import { TelegramAPI, TelegramApiError } from '@/utils/telegram';
+import { TelegramLimiter } from './telegram-limiter';
 
 type RunnerStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
 
@@ -17,10 +18,12 @@ export class CampaignRunner {
   private progress: CampaignProgress;
   
   private readonly api: TelegramAPI;
+  private readonly limiter: TelegramLimiter;
   private readonly userIds: number[];
 
   constructor(private readonly options: CampaignRunnerOptions) {
     this.api = new TelegramAPI(options.bot.token, { logger: console.log });
+    this.limiter = new TelegramLimiter(this.api);
     this.userIds = [...(options.userBase.userIds || [])];
     
     this.progress = options.campaign.progress || {
@@ -40,6 +43,7 @@ export class CampaignRunner {
     if (this.status === 'running') return;
     this.log('Starting campaign...');
     this.status = 'running';
+    this.limiter.start();
     this.runLoop();
   }
 
@@ -47,57 +51,53 @@ export class CampaignRunner {
     if (this.status === 'running') {
       this.log('Pausing campaign...');
       this.status = 'paused';
+      this.limiter.stop();
     }
   }
 
   public stop() {
     this.log('Stopping campaign...');
     this.status = 'stopped';
+    this.limiter.stop();
   }
 
   private async runLoop() {
-    const { campaign } = this.options;
-    const { chunkSize, intervalMs } = campaign.sendSettings;
+    this.log(`Enqueuing ${this.userIds.length} messages.`);
 
-    while (this.progress.sentCount + this.progress.failedCount < this.progress.totalUsers) {
-      if (this.status !== 'running') {
-        this.log(`Loop halted. Status: ${this.status}`);
-        this.options.onFinish(this.status, this.progress);
-        return;
-      }
+    const promises = this.userIds.map(userId => {
+        const { method, payload } = this.prepareMessagePayload(userId);
+        return this.limiter.enqueue(method, payload)
+            .then(() => {
+                this.progress.sentCount++;
+                this.progress.results.push({ userId, status: 'success', timestamp: new Date() });
+            })
+            .catch((error) => {
+                this.progress.failedCount++;
+                const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
+                this.progress.results.push({ userId, status: 'failed', error: errorMsg, timestamp: new Date() });
+                this.log(`Failed to send to ${userId}: ${errorMsg}`);
+            })
+            .finally(() => {
+                // Always report progress
+                this.options.onProgress(this.progress);
+            });
+    });
 
-      const offset = this.progress.sentCount + this.progress.failedCount;
-      const chunk = this.userIds.slice(offset, offset + chunkSize);
-      
-      this.log(`Processing chunk of ${chunk.length} users (offset: ${offset}).`);
+    await Promise.allSettled(promises);
 
-      const promises = chunk.map(userId => this.sendMessageToUser(userId));
-      const results = await Promise.allSettled(promises);
-
-      results.forEach((result, i) => {
-        const userId = chunk[i];
-        if (result.status === 'fulfilled') {
-          this.progress.sentCount++;
-          this.progress.results.push({ userId, status: 'success', timestamp: new Date() });
-        } else {
-          this.progress.failedCount++;
-          const errorMsg = result.reason instanceof TelegramApiError ? result.reason.description : result.reason.message;
-          this.progress.results.push({ userId, status: 'failed', error: errorMsg, timestamp: new Date() });
-          this.log(`Failed to send to ${userId}: ${errorMsg}`);
-        }
-      });
-      
-      this.options.onProgress(this.progress);
-
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    // Final check on status before finishing
+    if (this.status === 'running') {
+        this.log('Campaign completed.');
+        this.status = 'completed';
+    } else {
+        this.log(`Campaign finished with status: ${this.status}`);
     }
-
-    this.log('Campaign completed.');
-    this.status = 'completed';
+    
+    this.limiter.stop();
     this.options.onFinish(this.status, this.progress);
   }
 
-  private sendMessageToUser(userId: number) {
+  private prepareMessagePayload(userId: number) {
     const { campaign } = this.options;
     const { message } = campaign;
 
@@ -110,18 +110,18 @@ export class CampaignRunner {
     };
 
     if (message.photo) {
-        const payload: SendPhotoPayload = {
+        const payload = {
             ...commonPayload,
             photo: message.photo,
             caption: message.text,
         };
-        return this.api.sendPhoto(payload);
+        return { method: 'sendPhoto' as const, payload };
     } else {
-        const payload: SendMessagePayload = {
+        const payload = {
             ...commonPayload,
             text: message.text,
         };
-        return this.api.sendMessage(payload);
+        return { method: 'sendMessage' as const, payload };
     }
   }
 
