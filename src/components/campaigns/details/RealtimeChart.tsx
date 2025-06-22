@@ -16,9 +16,13 @@ export const RealtimeChart = ({ recipients }: RealtimeChartProps) => {
         const sendsByMinute: { [key: string]: { success: number, failed: number } } = {};
 
         recipients
-            .filter(r => r.status === 'success' || r.status === 'failed')
+            .filter(r => (r.status === 'success' || r.status === 'failed') && r.timestamp)
             .forEach(r => {
-                const minute = new Date(r.timestamp).toISOString().slice(0, 16); // Group by minute
+                const date = new Date(r.timestamp);
+                // Skip any records with an invalid date
+                if (isNaN(date.getTime())) return;
+
+                const minute = date.toISOString().slice(0, 16); // Group by minute
                 if (!sendsByMinute[minute]) {
                     sendsByMinute[minute] = { success: 0, failed: 0 };
                 }
