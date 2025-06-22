@@ -23,10 +23,20 @@ interface TerabotDB extends DBSchema {
     key: string;
     value: any;
   }
+  campaignRecipients: {
+    key: [string, number]; // [campaignId, userId]
+    value: {
+      campaignId: string;
+      userId: number;
+      status: 'pending' | 'success' | 'failed';
+      error?: string;
+    };
+    indexes: { campaignId: string };
+  };
 }
 
 const DB_NAME = 'terabot-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<TerabotDB>> | null = null;
 
@@ -51,6 +61,10 @@ const initDB = () => {
             }
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'key' });
+            }
+            if (!db.objectStoreNames.contains('campaignRecipients')) {
+                const recipientStore = db.createObjectStore('campaignRecipients', { keyPath: ['campaignId', 'userId'] });
+                recipientStore.createIndex('campaignId', 'campaignId');
             }
         },
     });
@@ -142,4 +156,55 @@ export const settingsStore = {
     const db = await initDB();
     return db.put('settings', { key, value });
   }
-} 
+}
+
+// 7. CRUD операции для CampaignRecipients
+export const campaignRecipientStore = {
+    async bulkAdd(
+        recipients: { campaignId: string; userId: number; status: 'pending' }[]
+    ): Promise<void> {
+        const db = await initDB();
+        const tx = db.transaction('campaignRecipients', 'readwrite');
+        await Promise.all(recipients.map(r => tx.store.put(r)));
+        await tx.done;
+    },
+
+    async updateStatus(
+        campaignId: string,
+        userId: number,
+        status: 'success' | 'failed',
+        error?: string
+    ): Promise<void> {
+        const db = await initDB();
+        const tx = db.transaction('campaignRecipients', 'readwrite');
+        const store = tx.store;
+        const recipient = await store.get([campaignId, userId]);
+        if (recipient) {
+            recipient.status = status;
+            if (error) recipient.error = error;
+            await store.put(recipient);
+        }
+        await tx.done;
+    },
+
+    async getUnprocessed(campaignId: string): Promise<{ userId: number; status: 'pending' | 'success' | 'failed'; }[]> {
+        const db = await initDB();
+        return db.getAllFromIndex(
+            'campaignRecipients',
+            'campaignId',
+            IDBKeyRange.only(campaignId)
+        );
+    },
+    
+    async clearForCampaign(campaignId: string): Promise<void> {
+        const db = await initDB();
+        const tx = db.transaction('campaignRecipients', 'readwrite');
+        const index = tx.store.index('campaignId');
+        let cursor = await index.openCursor(IDBKeyRange.only(campaignId));
+        while(cursor) {
+            cursor.delete();
+            cursor = await cursor.continue();
+        }
+        await tx.done;
+    }
+}; 

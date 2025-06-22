@@ -2,6 +2,9 @@ import type { Campaign, UserBase, Bot, CampaignProgress } from '@/types';
 import { TelegramAPI, TelegramApiError } from '@/utils/telegram';
 import { TelegramLimiter } from './telegram-limiter';
 import { UserBaseLoader } from './user-base-loader';
+import { campaignRecipientStore } from './db';
+
+const CHUNK_SIZE = 100;
 
 type RunnerStatus = 'idle' | 'loading-users' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
 
@@ -20,7 +23,7 @@ export class CampaignRunner {
   
   private readonly api: TelegramAPI;
   private readonly limiter: TelegramLimiter;
-  private userIds: number[] = [];
+  private userIdsToProcess: number[] = [];
 
   constructor(private readonly options: CampaignRunnerOptions) {
     this.api = new TelegramAPI(options.bot.token, { logger: console.log });
@@ -28,7 +31,7 @@ export class CampaignRunner {
     
     this.progress = options.campaign.progress || {
         campaignId: options.campaign.id,
-        totalUsers: 0, // Will be updated after loading users
+        totalUsers: 0,
         sentCount: 0,
         failedCount: 0,
         results: [],
@@ -39,33 +42,49 @@ export class CampaignRunner {
     return this.status;
   }
   
-  public async start() {
+  public async start(fromScratch = false) {
     if (this.status === 'running' || this.status === 'loading-users') return;
     this.log('Starting campaign...');
     
     try {
         this.status = 'loading-users';
-        this.log('Loading user base...');
-        const loader = new UserBaseLoader(this.options.userBase, (status, message) => {
-            this.log(`[UserLoader:${status}] ${message}`);
-        });
-        this.userIds = await loader.loadUserIds();
-        this.progress.totalUsers = this.userIds.length;
+        if(fromScratch) {
+            this.log('Starting from scratch, clearing previous progress...');
+            await campaignRecipientStore.clearForCampaign(this.options.campaign.id);
+        }
 
-        if (this.userIds.length === 0) {
-            this.log('User base is empty. Stopping campaign.');
-            this.status = 'completed'; // Or 'failed' with a specific message
+        this.log('Loading user base...');
+        const loader = new UserBaseLoader(this.options.userBase, (s, m) => this.log(`[UserLoader:${s}] ${m}`));
+        const allUserIds = await loader.loadUserIds();
+        
+        this.log('Checking for existing progress in DB...');
+        const processedUsers = await campaignRecipientStore.getUnprocessed(this.options.campaign.id);
+        const processedUserIds = new Set(processedUsers.map(u => u.userId));
+        
+        this.userIdsToProcess = allUserIds.filter(id => !processedUserIds.has(id));
+        this.progress.totalUsers = allUserIds.length;
+        this.progress.sentCount = processedUsers.filter(u => u.status === 'success').length;
+        this.progress.failedCount = processedUsers.filter(u => u.status === 'failed').length;
+
+        if (this.userIdsToProcess.length === 0) {
+            this.log('No new users to process. Campaign is considered complete.');
+            this.status = 'completed';
             this.options.onFinish(this.status, this.progress);
             return;
         }
 
-        this.log(`Successfully loaded ${this.userIds.length} users. Starting distribution.`);
+        this.log(`Found ${this.userIdsToProcess.length} users to process. Adding to DB queue...`);
+        const recipientsToQueue = this.userIdsToProcess.map(userId => ({ campaignId: this.options.campaign.id, userId, status: 'pending' as const }));
+        await campaignRecipientStore.bulkAdd(recipientsToQueue);
+
+        this.log('Starting distribution...');
         this.status = 'running';
         this.limiter.start();
         this.runLoop();
 
     } catch (error) {
-        this.log(`Failed to load user base: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        this.log(`Failed to start campaign: ${message}`);
         this.status = 'failed';
         this.options.onError(error as Error, this.progress);
     }
@@ -86,30 +105,38 @@ export class CampaignRunner {
   }
 
   private async runLoop() {
-    this.log(`Enqueuing ${this.userIds.length} messages.`);
+    this.log(`Starting run loop with ${this.userIdsToProcess.length} users.`);
+    
+    for (let i = 0; i < this.userIdsToProcess.length; i += CHUNK_SIZE) {
+        if (this.status !== 'running') {
+            this.log(`Loop halted. Status: ${this.status}`);
+            break;
+        }
+        
+        const chunk = this.userIdsToProcess.slice(i, i + CHUNK_SIZE);
+        this.log(`Processing chunk of ${chunk.length} users (offset: ${i}).`);
 
-    const promises = this.userIds.map(userId => {
-        const { method, payload } = this.prepareMessagePayload(userId);
-        return this.limiter.enqueue(method, payload)
-            .then(() => {
-                this.progress.sentCount++;
-                this.progress.results.push({ userId, status: 'success', timestamp: new Date() });
-            })
-            .catch((error) => {
-                this.progress.failedCount++;
-                const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
-                this.progress.results.push({ userId, status: 'failed', error: errorMsg, timestamp: new Date() });
-                this.log(`Failed to send to ${userId}: ${errorMsg}`);
-            })
-            .finally(() => {
-                // Always report progress
-                this.options.onProgress(this.progress);
-            });
-    });
+        const promises = chunk.map(userId => {
+            const { method, payload } = this.prepareMessagePayload(userId);
+            return this.limiter.enqueue(method, payload)
+                .then(() => {
+                    this.progress.sentCount++;
+                    return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'success');
+                })
+                .catch((error) => {
+                    this.progress.failedCount++;
+                    const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
+                    this.log(`Failed to send to ${userId}: ${errorMsg}`);
+                    return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'failed', errorMsg);
+                })
+                .finally(() => {
+                    this.options.onProgress(this.progress);
+                });
+        });
 
-    await Promise.allSettled(promises);
+        await Promise.allSettled(promises);
+    }
 
-    // Final check on status before finishing
     if (this.status === 'running') {
         this.log('Campaign completed.');
         this.status = 'completed';
