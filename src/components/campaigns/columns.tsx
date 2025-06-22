@@ -24,7 +24,8 @@ export type CampaignsAction =
   | { type: 'pause'; id: string }
   | { type: 'stop'; id: string }
   | { type: 'edit'; id: string }
-  | { type: 'delete'; id: string };
+  | { type: 'delete'; id: string }
+  | { type: 'restart'; id: string };
 
 type GetColumnsOptions = {
     onAction: (action: CampaignsAction) => void;
@@ -32,11 +33,13 @@ type GetColumnsOptions = {
 
 const statusVariantMap: { [key in Campaign['status']]: 'default' | 'secondary' | 'destructive' | 'outline' } = {
     draft: 'secondary',
+    'loading-users': 'outline',
     running: 'default',
     paused: 'outline',
     completed: 'default',
     failed: 'destructive',
     stopped: 'destructive',
+    idle: 'secondary',
 };
 
 
@@ -127,6 +130,11 @@ export const getCampaignsColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
                     Stop
                 </DropdownMenuItem>
             )}
+
+            <DropdownMenuItem onClick={() => onAction({ type: 'restart', id: campaign.id })}>
+              <Edit className="mr-2 h-4 w-4" />
+              Restart
+            </DropdownMenuItem>
 
             <DropdownMenuSeparator />
 

@@ -1,92 +1,96 @@
 import { CampaignRunner } from '@/lib/campaign-runner';
-import type { Campaign, CampaignProgress } from '@/types';
+import type { Campaign, CampaignProgress, UserBase, Bot } from '@/types';
 import { campaignStore, userBaseStore, botStore } from '@/lib/db';
 
-type CampaignRunParams = {
-  campaignId: string;
-  onStateChange: (campaign: Campaign) => void;
-};
-
-class CampaignServiceController {
+class CampaignManager {
   private runners = new Map<string, CampaignRunner>();
 
-  async startCampaign({ campaignId, onStateChange }: CampaignRunParams) {
+  private async getOrCreateRunner(campaignId: string): Promise<CampaignRunner> {
     if (this.runners.has(campaignId)) {
-      console.warn(`Campaign ${campaignId} is already running.`);
-      return;
+        return this.runners.get(campaignId)!;
     }
-    
-    console.log(`[Service] Initializing campaign ${campaignId}`);
+
+    console.log(`[Manager] Initializing runner for campaign ${campaignId}`);
 
     const campaign = await campaignStore.get(campaignId);
     if (!campaign) throw new Error('Campaign not found');
     
     const userBase = await userBaseStore.get(campaign.userBaseId);
-    if (!userBase || !userBase.userIds) throw new Error('User base not found or is empty');
+    if (!userBase) throw new Error('User base not found for campaign');
 
     const bot = await botStore.get(campaign.botId);
-    if (!bot) throw new Error('Bot not found');
+    if (!bot) throw new Error('Bot not found for campaign');
     
     const onProgress = (progress: CampaignProgress) => {
-      const updatedCampaign: Campaign = { ...campaign, progress, status: 'running' };
-      campaignStore.update(updatedCampaign);
-      onStateChange(updatedCampaign);
-      console.log(`[Service] Progress for ${campaignId}: ${progress.sentCount}/${progress.totalUsers}`);
+      // We only update the progress part of the campaign in the DB
+      // The status is handled by the control methods (run, pause, etc.)
+      campaignStore.get(campaignId).then(c => {
+        if (c) campaignStore.update({ ...c, progress });
+      });
     };
 
-    const onFinish = (status: string, finalProgress: CampaignProgress) => {
-        const finalStatus = (status === 'stopped' || status === 'paused') ? status : 'completed';
-        const updatedCampaign: Campaign = { ...campaign, progress: finalProgress, status: finalStatus as Campaign['status'] };
-        campaignStore.update(updatedCampaign);
-        onStateChange(updatedCampaign);
+    const onFinish = (status: Campaign['status'], finalProgress: CampaignProgress) => {
+        campaignStore.get(campaignId).then(c => {
+            if (c) campaignStore.update({ ...c, progress: finalProgress, status });
+        });
         this.runners.delete(campaignId);
-        console.log(`[Service] Finished campaign ${campaignId} with status: ${finalStatus}`);
+        console.log(`[Manager] Finished campaign ${campaignId} with status: ${status}`);
     };
 
     const onError = (error: Error, finalProgress: CampaignProgress) => {
-        const updatedCampaign: Campaign = { ...campaign, progress: finalProgress, status: 'failed' };
-        campaignStore.update(updatedCampaign);
-        onStateChange(updatedCampaign);
+        campaignStore.get(campaignId).then(c => {
+            if (c) campaignStore.update({ ...c, progress: finalProgress, status: 'failed' });
+        });
         this.runners.delete(campaignId);
-        console.error(`[Service] Error in campaign ${campaignId}:`, error);
+        console.error(`[Manager] Error in campaign ${campaignId}:`, error);
     };
 
-    const runner = new CampaignRunner({
-      campaign,
-      userBase,
-      bot,
-      onProgress,
-      onFinish,
-      onError,
-    });
-    
+    const runner = new CampaignRunner({ campaign, userBase, bot, onProgress, onFinish, onError });
     this.runners.set(campaignId, runner);
-    runner.start();
-
-    const initialUpdate: Campaign = { ...campaign, status: 'running', progress: (runner as any).progress };
-    await campaignStore.update(initialUpdate);
-    onStateChange(initialUpdate);
+    return runner;
   }
 
-  pauseCampaign(campaignId: string) {
-    const runner = this.runners.get(campaignId);
-    if (runner) {
-      runner.pause();
-      console.log(`[Service] Paused campaign ${campaignId}`);
+  async run(campaignId: string) {
+    const runner = await this.getOrCreateRunner(campaignId);
+    const campaign = await campaignStore.get(campaignId);
+    if (campaign) {
+        await campaignStore.update({ ...campaign, status: runner.getStatus() === 'paused' ? 'running' : 'running' });
+    }
+    runner.start(); // resumes or starts
+  }
+  
+  async restart(campaignId: string) {
+    const runner = await this.getOrCreateRunner(campaignId);
+    const campaign = await campaignStore.get(campaignId);
+    if (campaign) {
+        await campaignStore.update({ ...campaign, status: 'running' });
+    }
+    runner.restart();
+  }
+
+  async pause(campaignId: string) {
+    if (!this.runners.has(campaignId)) return;
+    const runner = await this.getOrCreateRunner(campaignId);
+    runner.pause();
+    const campaign = await campaignStore.get(campaignId);
+    if (campaign) {
+        await campaignStore.update({ ...campaign, status: 'paused' });
     }
   }
 
-  stopCampaign(campaignId: string) {
-    const runner = this.runners.get(campaignId);
-    if (runner) {
-      runner.stop();
-       console.log(`[Service] Stopped campaign ${campaignId}`);
+  async stop(campaignId: string) {
+    if (!this.runners.has(campaignId)) return;
+    const runner = await this.getOrCreateRunner(campaignId);
+    runner.stop();
+    const campaign = await campaignStore.get(campaignId);
+    if (campaign) {
+        await campaignStore.update({ ...campaign, status: 'stopped' });
     }
   }
 
-  getRunnerStatus(campaignId: string) {
+  getStatus(campaignId: string): CampaignRunner['status'] | null {
     return this.runners.get(campaignId)?.getStatus() || null;
   }
 }
 
-export const CampaignService = new CampaignServiceController(); 
+export const CampaignService = new CampaignManager(); 

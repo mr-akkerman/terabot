@@ -42,17 +42,33 @@ export class CampaignRunner {
     return this.status;
   }
   
-  public async start(fromScratch = false) {
+  /**
+   * Starts the campaign from the beginning, clearing any previous progress.
+   */
+  public async restart() {
+    this.log('Restarting campaign, clearing previous progress...');
+    await campaignRecipientStore.clearForCampaign(this.options.campaign.id);
+    // Reset progress object
+    this.progress = {
+        campaignId: this.options.campaign.id,
+        totalUsers: 0,
+        sentCount: 0,
+        failedCount: 0,
+        results: [],
+    };
+    await this.start();
+  }
+
+  /**
+   * Starts a campaign, resuming from its last known state.
+   */
+  public async start() {
     if (this.status === 'running' || this.status === 'loading-users') return;
-    this.log('Starting campaign...');
+    this.log('Starting or resuming campaign...');
     
     try {
         this.status = 'loading-users';
-        if(fromScratch) {
-            this.log('Starting from scratch, clearing previous progress...');
-            await campaignRecipientStore.clearForCampaign(this.options.campaign.id);
-        }
-
+        
         this.log('Loading user base...');
         const loader = new UserBaseLoader(this.options.userBase, (s, m) => this.log(`[UserLoader:${s}] ${m}`));
         const allUserIds = await loader.loadUserIds();
@@ -90,6 +106,9 @@ export class CampaignRunner {
     }
   }
 
+  /**
+   * Pauses the currently running campaign.
+   */
   public pause() {
     if (this.status === 'running') {
       this.log('Pausing campaign...');
@@ -98,6 +117,9 @@ export class CampaignRunner {
     }
   }
 
+  /**
+   * Stops the campaign permanently.
+   */
   public stop() {
     this.log('Stopping campaign...');
     this.status = 'stopped';

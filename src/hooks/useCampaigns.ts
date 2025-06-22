@@ -2,84 +2,73 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { campaignStore } from '@/lib/db';
-import type { Campaign } from '@/types';
-import { CampaignService } from '@/services/campaign.service';
+import { Campaign } from '@/types';
+import { v4 as uuidv4 } from 'uuid';
+import { useCampaignControls } from './useCampaignControls';
 
-const CAMPAIGNS_QUERY_KEY = 'campaigns';
+export const CAMPAIGNS_QUERY_KEY = 'campaigns';
 
-export function useCampaigns() {
-  const queryClient = useQueryClient();
+export const useCampaigns = () => {
+    const queryClient = useQueryClient();
+    const controls = useCampaignControls();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: [CAMPAIGNS_QUERY_KEY],
-    queryFn: () => campaignStore.getAll(),
-  });
-
-  const { mutate: addCampaign, isPending: isAdding } = useMutation<
-    string,
-    Error,
-    Pick<Campaign, 'name' | 'description' | 'botId' | 'userBaseId' | 'sendSettings' | 'message'>
-    >({
-    mutationFn: (newCampaign) => {
-      const fullCampaign: Campaign = {
-        id: crypto.randomUUID(),
-        createdAt: new Date(),
-        status: 'draft',
-        ...newCampaign,
-      };
-      return campaignStore.add(fullCampaign);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
-    },
-  });
-
-  const { mutate: updateCampaign, isPending: isUpdating } = useMutation({
-    mutationFn: (campaign: Campaign) => campaignStore.update(campaign),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
-    },
-  });
-
-  const { mutate: deleteCampaign } = useMutation({
-    mutationFn: (id: string) => campaignStore.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
-    },
-  });
-
-  const runCampaign = (campaignId: string) => {
-    CampaignService.startCampaign({
-      campaignId,
-      onStateChange: () => {
-        queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
-      },
-    }).catch(error => {
-        console.error("Failed to start campaign:", error);
-        queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
+    const { data: campaigns, isLoading } = useQuery<Campaign[]>({
+        queryKey: [CAMPAIGNS_QUERY_KEY],
+        queryFn: async () => {
+            const data = await campaignStore.getAll();
+            return data.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        },
     });
-  };
 
-  const pauseCampaign = (campaignId: string) => {
-    CampaignService.pauseCampaign(campaignId);
-  };
+    const getCampaignQuery = (id: string) => {
+        return useQuery<Campaign | undefined>({
+            queryKey: [CAMPAIGNS_QUERY_KEY, id],
+            queryFn: () => campaignStore.get(id),
+            enabled: !!id,
+        });
+    };
 
-  const stopCampaign = (campaignId: string) => {
-    CampaignService.stopCampaign(campaignId);
-  };
+    const addCampaignMutation = useMutation({
+        mutationFn: async (campaign: Omit<Campaign, 'id' | 'createdAt' | 'status'>) => {
+            const newCampaign: Campaign = {
+                ...campaign,
+                id: uuidv4(),
+                createdAt: new Date(),
+                status: 'draft',
+            };
+            await campaignStore.add(newCampaign);
+            return newCampaign;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
+        },
+    });
 
+    const updateCampaignMutation = useMutation({
+        mutationFn: (campaign: Campaign) => campaignStore.update(campaign),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
+            queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY, variables.id] });
+        },
+    });
 
-  return {
-    campaigns: data,
-    isLoading,
-    error,
-    addCampaign,
-    isAdding,
-    updateCampaign,
-    isUpdating,
-    deleteCampaign,
-    runCampaign,
-    pauseCampaign,
-    stopCampaign,
-  };
-} 
+    const deleteCampaignMutation = useMutation({
+        mutationFn: (id: string) => campaignStore.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
+        },
+    });
+
+    return {
+        campaigns,
+        isLoading,
+        getCampaignQuery,
+        addCampaign: addCampaignMutation.mutateAsync,
+        updateCampaign: updateCampaignMutation.mutateAsync,
+        deleteCampaign: deleteCampaignMutation.mutateAsync,
+        startCampaign: controls.run,
+        pauseCampaign: controls.pause,
+        stopCampaign: controls.stop,
+        restartCampaign: controls.restart,
+    };
+}; 

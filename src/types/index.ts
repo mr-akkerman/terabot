@@ -109,6 +109,6 @@ export interface Campaign {
   userBaseId: string; // ID связанной базы пользователей
   sendSettings: SendSettings; // Настройки отправки
   createdAt: Date; // Дата создания
-  status: 'draft' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'; // Текущий статус
+  status: 'draft' | 'loading-users' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'idle'; // Текущий статус
   progress?: CampaignProgress; // Прогресс выполнения
 }
