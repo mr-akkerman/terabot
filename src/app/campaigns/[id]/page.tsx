@@ -8,6 +8,7 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { CampaignStats } from '@/components/campaigns/details/CampaignStats';
 import { RecipientLogs } from '@/components/campaigns/details/RecipientLogs';
 import { RealtimeChart } from '@/components/campaigns/details/RealtimeChart';
+import { RecipientTable } from '@/components/campaigns/details/RecipientTable';
 import { useCampaignControls } from '@/hooks/useCampaignControls';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, RefreshCw } from 'lucide-react';
@@ -61,6 +62,8 @@ export default function CampaignDetailPage() {
             <CampaignStats campaign={campaign} />
 
             <RealtimeChart recipients={recipients} />
+
+            <RecipientTable recipients={recipients} />
 
             <RecipientLogs recipients={recipients} />
         </div>
