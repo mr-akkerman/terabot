@@ -8,29 +8,34 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { CampaignFormValues } from './CampaignForm';
+import type { CampaignMessageButton } from '@/types';
+import type { FieldArrayWithId } from 'react-hook-form';
 
 interface EditableButtonProps {
+  id: string;
   rowIndex: number;
   buttonIndex: number;
   removeButton: () => void;
 }
 
-export function EditableButton({ rowIndex, buttonIndex, removeButton }: EditableButtonProps) {
+export function EditableButton({ id, rowIndex, buttonIndex, removeButton }: EditableButtonProps) {
   const { control, setValue, getFieldState } = useFormContext<CampaignFormValues>();
+  
+  const fieldName = `message.buttons.${rowIndex}.buttons.${buttonIndex}` as const;
   const button = useWatch({
     control,
-    name: `message.buttons.${rowIndex}.${buttonIndex}`,
+    name: fieldName,
   });
   
-  const { error } = getFieldState(`message.buttons.${rowIndex}.${buttonIndex}`);
+  const { error } = getFieldState(fieldName);
 
   const handleTypeChange = (isUrl: boolean) => {
     const type = isUrl ? 'url' : 'callback';
-    setValue(`message.buttons.${rowIndex}.${buttonIndex}.type`, type, { shouldValidate: true });
+    setValue(`${fieldName}.type`, type, { shouldValidate: true });
     if (type === 'url') {
-      setValue(`message.buttons.${rowIndex}.${buttonIndex}.callback_data`, '', { shouldValidate: true });
+      setValue(`${fieldName}.callback_data`, '', { shouldValidate: true });
     } else {
-      setValue(`message.buttons.${rowIndex}.${buttonIndex}.url`, '', { shouldValidate: true });
+      setValue(`${fieldName}.url`, '', { shouldValidate: true });
     }
   };
 
@@ -52,40 +57,42 @@ export function EditableButton({ rowIndex, buttonIndex, removeButton }: Editable
             </p>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor={`button-text-${button.id}`}>Text</Label>
+            <Label htmlFor={`button-text-${id}`}>Text</Label>
             <Input
-              id={`button-text-${button.id}`}
+              id={`button-text-${id}`}
               defaultValue={button.text}
-              onChange={(e) => setValue(`message.buttons.${rowIndex}.${buttonIndex}.text`, e.target.value, { shouldValidate: true })}
+              onChange={(e) => setValue(`${fieldName}.text`, e.target.value, { shouldValidate: true })}
               className="col-span-2 h-8"
             />
             <div className="flex items-center space-x-2 mt-4">
-                <Label htmlFor={`button-type-switch-${button.id}`}>Callback</Label>
+                <Label htmlFor={`button-type-switch-${id}`}>Callback</Label>
                 <Switch
-                    id={`button-type-switch-${button.id}`}
+                    id={`button-type-switch-${id}`}
                     checked={button.type === 'url'}
                     onCheckedChange={handleTypeChange}
                 />
-                <Label htmlFor={`button-type-switch-${button.id}`}>URL</Label>
+                <Label htmlFor={`button-type-switch-${id}`}>URL</Label>
             </div>
             
             {button.type === 'url' ? (
               <div>
-                <Label htmlFor={`button-url-${button.id}`}>URL</Label>
+                <Label htmlFor={`button-url-${id}`}>URL</Label>
                 <Input
-                  id={`button-url-${button.id}`}
+                  id={`button-url-${id}`}
+                  placeholder="https://example.com"
                   defaultValue={button.url}
-                  onChange={(e) => setValue(`message.buttons.${rowIndex}.${buttonIndex}.url`, e.target.value, { shouldValidate: true })}
+                  onChange={(e) => setValue(`${fieldName}.url`, e.target.value, { shouldValidate: true })}
                   className="col-span-2 h-8"
                 />
               </div>
             ) : (
               <div>
-                <Label htmlFor={`button-callback-${button.id}`}>Callback Data</Label>
+                <Label htmlFor={`button-callback-${id}`}>Callback Data</Label>
                 <Input
-                  id={`button-callback-${button.id}`}
+                  id={`button-callback-${id}`}
+                  placeholder="my_callback_data"
                   defaultValue={button.callback_data}
-                  onChange={(e) => setValue(`message.buttons.${rowIndex}.${buttonIndex}.callback_data`, e.target.value, { shouldValidate: true })}
+                  onChange={(e) => setValue(`${fieldName}.callback_data`, e.target.value, { shouldValidate: true })}
                   className="col-span-2 h-8"
                 />
               </div>

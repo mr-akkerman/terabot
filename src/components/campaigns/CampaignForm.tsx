@@ -63,6 +63,11 @@ const buttonSchema = z.object({
     }
 });
 
+const buttonRowSchema = z.object({
+    id: z.string(),
+    buttons: z.array(buttonSchema),
+});
+
 export const campaignFormSchema = z.object({
   name: z.string().min(3, { message: 'Name must be at least 3 characters long.' }),
   description: z.string().optional(),
@@ -77,7 +82,7 @@ export const campaignFormSchema = z.object({
         .min(1, { message: 'Message cannot be empty.'})
         .max(4096, { message: 'Message cannot be longer than 4096 characters.'})
         .refine(validateTelegramHtml, (issue) => ({ message: issue as string })),
-      buttons: z.array(z.array(buttonSchema)).optional(),
+      buttons: z.array(buttonRowSchema).optional(),
       photo: z.string().optional(),
   })
 });
@@ -103,7 +108,10 @@ export function CampaignForm() {
         ...existingCampaign,
         message: {
             ...existingCampaign.message,
-            buttons: existingCampaign.message.buttons || [],
+            buttons: existingCampaign.message.buttons?.map(row => ({
+                id: `row-${crypto.randomUUID()}`,
+                buttons: row,
+            })) || [],
         }
     } : {
       name: '',
@@ -122,7 +130,16 @@ export function CampaignForm() {
   
   useEffect(() => {
     if (existingCampaign) {
-      form.reset(existingCampaign);
+      form.reset({
+        ...existingCampaign,
+        message: {
+            ...existingCampaign.message,
+            buttons: existingCampaign.message.buttons?.map(row => ({
+                id: `row-${crypto.randomUUID()}`,
+                buttons: row,
+            })) || [],
+        }
+      });
     }
   }, [existingCampaign, form]);
 
@@ -139,6 +156,7 @@ export function CampaignForm() {
             ...data.message,
             id: existingCampaign?.message.id || crypto.randomUUID(),
             parse_mode: 'HTML' as const,
+            buttons: data.message.buttons?.map(row => row.buttons),
         },
     };
 
@@ -169,6 +187,9 @@ export function CampaignForm() {
   if (isLoading && campaignId) {
     return <div className="flex justify-center py-10"><LoadingSpinner size={40} /></div>;
   }
+
+  const watchedMessage = form.watch('message');
+  const previewButtons = watchedMessage.buttons?.map(row => row.buttons);
 
   return (
     <FormProvider {...form}>
@@ -248,12 +269,12 @@ export function CampaignForm() {
                     <Card>
                         <CardHeader><CardTitle>Message Preview</CardTitle></CardHeader>
                         <CardContent>
-                            <TelegramPreview
-                                message={form.watch('message.text')}
-                                buttons={form.watch('message.buttons') as any}
-                                photo={form.watch('message.photo')}
-                                botName={bots?.find(b => b.id === form.watch('botId'))?.name || "Your Bot"} 
-                            />
+                             <TelegramPreview 
+                                botName={bots?.find(b => b.id === form.getValues('botId'))?.name}
+                                message={watchedMessage.text}
+                                photo={watchedMessage.photo}
+                                buttons={previewButtons as any}
+                             />
                         </CardContent>
                     </Card>
                     <Card>

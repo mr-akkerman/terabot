@@ -52,7 +52,10 @@ export function ButtonEditor() {
 
   const addNewRow = () => {
     if (fields.length < MAX_ROWS) {
-      append([]);
+      append({
+        id: `row-${crypto.randomUUID()}`,
+        buttons: [],
+      });
     }
   }
 

@@ -27,7 +27,7 @@ export function ButtonRow({ id, rowIndex, removeRow }: ButtonRowProps) {
   const { control } = useFormContext<CampaignFormValues>();
   const { fields, append, remove, move } = useFieldArray({
     control,
-    name: `message.buttons.${rowIndex}`,
+    name: `message.buttons.${rowIndex}.buttons`,
   });
 
   const {
@@ -75,6 +75,7 @@ export function ButtonRow({ id, rowIndex, removeRow }: ButtonRowProps) {
                     {fields.map((button, buttonIndex) => (
                         <EditableButton
                             key={button.id}
+                            id={button.id}
                             rowIndex={rowIndex}
                             buttonIndex={buttonIndex}
                             removeButton={() => remove(buttonIndex)}
