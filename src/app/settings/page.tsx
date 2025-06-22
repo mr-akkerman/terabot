@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useBots } from '@/hooks';
 import type { Bot } from '@/types';
 
@@ -9,31 +9,37 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { DataTable } from '@/components/ui/data-table';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { BotDialog } from '@/components/bots/BotDialog';
-import { getBotsColumns } from '@/components/bots/columns';
+import { getBotsColumns, BotsAction } from '@/components/bots/columns';
 
 export default function SettingsPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedBot, setSelectedBot] = useState<Bot | undefined>(undefined);
     
-    const { bots, isLoading, error, deleteBot } = useBots();
+    const { bots, isLoading, error, deleteBot, checkBot } = useBots();
 
-    const handleEdit = (bot: Bot) => {
-        setSelectedBot(bot);
-        setIsDialogOpen(true);
-    };
-
-    const handleDelete = (id: string) => {
-        if (confirm('Are you sure you want to delete this bot? This action cannot be undone.')) {
-            deleteBot(id);
+    const handleAction = useCallback((action: BotsAction) => {
+        switch (action.type) {
+            case 'edit':
+                setSelectedBot(action.bot);
+                setIsDialogOpen(true);
+                break;
+            case 'delete':
+                if (confirm(`Are you sure you want to delete bot "${action.bot.name}"? This action cannot be undone.`)) {
+                    deleteBot(action.bot.id);
+                }
+                break;
+            case 'check':
+                checkBot(action.bot);
+                break;
         }
-    };
+    }, [deleteBot, checkBot]);
     
     const handleAddNew = () => {
         setSelectedBot(undefined);
         setIsDialogOpen(true);
     }
 
-    const columns = getBotsColumns(handleEdit, handleDelete);
+    const columns = useMemo(() => getBotsColumns({ onAction: handleAction }), [handleAction]);
 
     if (error) {
         return <ErrorMessage message={error.message} />;

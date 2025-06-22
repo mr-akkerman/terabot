@@ -52,8 +52,8 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Campaigns</h1>
         <Button onClick={() => router.push('/campaigns/create')}>
           <PlusCircle className="mr-2 h-4 w-4" />
