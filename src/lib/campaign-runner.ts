@@ -118,12 +118,16 @@ export class CampaignRunner {
   }
 
   /**
-   * Stops the campaign permanently.
+   * Stops the campaign permanently, saving final progress.
    */
   public stop() {
-    this.log('Stopping campaign...');
-    this.status = 'stopped';
-    this.limiter.stop();
+    if (this.status === 'running' || this.status === 'paused') {
+        this.log('Stopping campaign...');
+        this.status = 'stopped';
+        this.limiter.stop();
+        // Call onFinish immediately to finalize the state.
+        this.options.onFinish(this.status, this.progress);
+    }
   }
 
   private async runLoop() {
@@ -132,7 +136,9 @@ export class CampaignRunner {
     for (let i = 0; i < this.userIdsToProcess.length; i += CHUNK_SIZE) {
         if (this.status !== 'running') {
             this.log(`Loop halted. Status: ${this.status}`);
-            break;
+            // For pause/stop, we just exit the loop. 
+            // The state is handled by the pause() and stop() methods.
+            return;
         }
         
         const chunk = this.userIdsToProcess.slice(i, i + CHUNK_SIZE);
@@ -159,15 +165,13 @@ export class CampaignRunner {
         await Promise.allSettled(promises);
     }
 
+    // This code only runs if the loop completes without being interrupted.
     if (this.status === 'running') {
         this.log('Campaign completed.');
         this.status = 'completed';
-    } else {
-        this.log(`Campaign finished with status: ${this.status}`);
+        this.limiter.stop();
+        this.options.onFinish(this.status, this.progress);
     }
-    
-    this.limiter.stop();
-    this.options.onFinish(this.status, this.progress);
   }
 
   private prepareMessagePayload(userId: number) {

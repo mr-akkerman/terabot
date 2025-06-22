@@ -18,6 +18,11 @@ export const useCampaigns = () => {
             const data = await campaignStore.getAll();
             return data.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         },
+        refetchInterval: (query) => {
+            const data = query.state.data;
+            const isAnyCampaignActive = data?.some(c => c.status === 'running' || c.status === 'loading-users');
+            return isAnyCampaignActive ? 2000 : false; // Poll every 2 seconds if a campaign is active
+        },
     });
 
     const getCampaignQuery = (id: string) => {

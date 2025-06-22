@@ -63,7 +63,15 @@ class CampaignManager {
     const runner = await this.getOrCreateRunner(campaignId);
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
-        await campaignStore.update({ ...campaign, status: 'running' });
+        // Explicitly reset the progress in the database
+        const newProgress: CampaignProgress = {
+            campaignId: campaign.id,
+            totalUsers: 0,
+            sentCount: 0,
+            failedCount: 0,
+            results: [],
+        };
+        await campaignStore.update({ ...campaign, status: 'running', progress: newProgress });
     }
     runner.restart();
   }
