@@ -30,6 +30,11 @@ export const useCampaigns = () => {
             queryKey: [CAMPAIGNS_QUERY_KEY, id],
             queryFn: () => campaignStore.get(id),
             enabled: !!id,
+            refetchInterval: (query) => {
+                const campaign = query.state.data;
+                const isActive = campaign?.status === 'running' || campaign?.status === 'loading-users';
+                return isActive ? 2000 : false;
+            }
         });
     };
 

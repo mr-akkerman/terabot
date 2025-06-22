@@ -67,6 +67,7 @@ export default function CampaignsPage() {
             <DataTable
                 columns={columns}
                 data={campaigns || []}
+                onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
             />
         </div>
     );

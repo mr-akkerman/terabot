@@ -11,11 +11,12 @@ export const useCampaignControls = () => {
     ) => {
         return useMutation({
             mutationFn: (campaignId: string) => CampaignService[action](campaignId),
-            onSuccess: () => {
+            onSuccess: (data, campaignId) => {
                 toast.success(successMessage);
                 // Invalidate queries to refetch campaign data and update the UI
-                queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-                queryClient.invalidateQueries({ queryKey: ['campaign'] });
+                queryClient.invalidateQueries({ queryKey: ['campaigns'] }); // For the list page
+                queryClient.invalidateQueries({ queryKey: ['campaigns', campaignId] }); // For the detail page campaign data
+                queryClient.invalidateQueries({ queryKey: ['campaignRecipients', campaignId] }); // For the detail page recipient logs
             },
             onError: (error: Error) => {
                 toast.error(`Error: ${error.message}`);
