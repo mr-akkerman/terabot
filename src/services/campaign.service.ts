@@ -1,6 +1,6 @@
 import { CampaignRunner } from '@/lib/campaign-runner';
 import type { Campaign, CampaignProgress, UserBase, Bot } from '@/types';
-import { campaignStore, userBaseStore, botStore } from '@/lib/db';
+import { campaignStore, userBaseStore, botStore, campaignRecipientStore } from '@/lib/db';
 
 class CampaignManager {
   private runners = new Map<string, CampaignRunner>();
@@ -63,6 +63,9 @@ class CampaignManager {
     const runner = await this.getOrCreateRunner(campaignId);
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
+        // Clear previous recipient logs for this campaign
+        await campaignRecipientStore.clearForCampaign(campaignId);
+
         // Explicitly reset the progress in the database
         const newProgress: CampaignProgress = {
             campaignId: campaign.id,

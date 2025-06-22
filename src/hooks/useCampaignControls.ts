@@ -13,6 +13,13 @@ export const useCampaignControls = () => {
             mutationFn: (campaignId: string) => CampaignService[action](campaignId),
             onSuccess: (data, campaignId) => {
                 toast.success(successMessage);
+
+                // For restart, we want to give immediate UI feedback that the logs are cleared
+                // before the new pending ones are fetched.
+                if (action === 'restart') {
+                    queryClient.setQueryData(['campaignRecipients', campaignId], []);
+                }
+
                 // Invalidate queries to refetch campaign data and update the UI
                 queryClient.invalidateQueries({ queryKey: ['campaigns'] }); // For the list page
                 queryClient.invalidateQueries({ queryKey: ['campaigns', campaignId] }); // For the detail page campaign data

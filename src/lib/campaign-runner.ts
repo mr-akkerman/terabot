@@ -46,16 +46,9 @@ export class CampaignRunner {
    * Starts the campaign from the beginning, clearing any previous progress.
    */
   public async restart() {
-    this.log('Restarting campaign, clearing previous progress...');
-    await campaignRecipientStore.clearForCampaign(this.options.campaign.id);
-    // Reset progress object
-    this.progress = {
-        campaignId: this.options.campaign.id,
-        totalUsers: 0,
-        sentCount: 0,
-        failedCount: 0,
-        results: [],
-    };
+    this.log('Restarting campaign...');
+    // The service layer is now responsible for clearing old data.
+    // The runner just needs to (re)start the process.
     await this.start();
   }
 
