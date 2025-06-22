@@ -1,8 +1,9 @@
 import type { Campaign, UserBase, Bot, CampaignProgress } from '@/types';
 import { TelegramAPI, TelegramApiError } from '@/utils/telegram';
 import { TelegramLimiter } from './telegram-limiter';
+import { UserBaseLoader } from './user-base-loader';
 
-type RunnerStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
+type RunnerStatus = 'idle' | 'loading-users' | 'running' | 'paused' | 'stopped' | 'completed' | 'failed';
 
 interface CampaignRunnerOptions {
   campaign: Campaign;
@@ -19,16 +20,15 @@ export class CampaignRunner {
   
   private readonly api: TelegramAPI;
   private readonly limiter: TelegramLimiter;
-  private readonly userIds: number[];
+  private userIds: number[] = [];
 
   constructor(private readonly options: CampaignRunnerOptions) {
     this.api = new TelegramAPI(options.bot.token, { logger: console.log });
     this.limiter = new TelegramLimiter(this.api);
-    this.userIds = [...(options.userBase.userIds || [])];
     
     this.progress = options.campaign.progress || {
         campaignId: options.campaign.id,
-        totalUsers: this.userIds.length,
+        totalUsers: 0, // Will be updated after loading users
         sentCount: 0,
         failedCount: 0,
         results: [],
@@ -39,12 +39,36 @@ export class CampaignRunner {
     return this.status;
   }
   
-  public start() {
-    if (this.status === 'running') return;
+  public async start() {
+    if (this.status === 'running' || this.status === 'loading-users') return;
     this.log('Starting campaign...');
-    this.status = 'running';
-    this.limiter.start();
-    this.runLoop();
+    
+    try {
+        this.status = 'loading-users';
+        this.log('Loading user base...');
+        const loader = new UserBaseLoader(this.options.userBase, (status, message) => {
+            this.log(`[UserLoader:${status}] ${message}`);
+        });
+        this.userIds = await loader.loadUserIds();
+        this.progress.totalUsers = this.userIds.length;
+
+        if (this.userIds.length === 0) {
+            this.log('User base is empty. Stopping campaign.');
+            this.status = 'completed'; // Or 'failed' with a specific message
+            this.options.onFinish(this.status, this.progress);
+            return;
+        }
+
+        this.log(`Successfully loaded ${this.userIds.length} users. Starting distribution.`);
+        this.status = 'running';
+        this.limiter.start();
+        this.runLoop();
+
+    } catch (error) {
+        this.log(`Failed to load user base: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        this.status = 'failed';
+        this.options.onError(error as Error, this.progress);
+    }
   }
 
   public pause() {

@@ -36,28 +36,32 @@ export interface CampaignMessage {
  * База пользователей для рассылки.
  * Может быть статическим списком ID или загружаться по API.
  */
-export interface UserBase {
+export type UserBase = StaticUserBase | ApiUserBase;
+
+interface BaseUserBase {
   id: string;
-  name: string;
+  name:string;
   description?: string;
-  type: 'static' | 'api';
-  
-  // Для статического типа
-  rawUserIds?: string; // "Сырой" текст из textarea
-
-  // Для API типа
-  apiUrl?: string;
-  apiMethod?: 'GET' | 'POST';
-  apiHeaders?: { key: string; value: string }[];
-
-  // Обработанные данные
-  userIds?: number[];
   userCount?: number;
   lastError?: string;
   lastCheckStatus?: 'success' | 'failed' | 'pending';
   lastCheckedAt?: Date;
-  
   createdAt: Date;
+}
+
+export interface StaticUserBase extends BaseUserBase {
+    type: 'static';
+    rawUserIds: string; // "Сырой" текст из textarea
+    userIds?: number[]; // Обработанные и валидные ID
+}
+
+export interface ApiUserBase extends BaseUserBase {
+    type: 'api';
+    apiUrl: string;
+    apiMethod?: 'GET' | 'POST';
+    apiHeaders?: { key: string; value: string }[];
+    // Поле userIds будет заполнено после загрузки
+    userIds?: number[];
 }
 
 /**
