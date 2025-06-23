@@ -16,16 +16,27 @@ export default function CampaignsPage() {
         campaigns, 
         isLoading, 
         deleteCampaign, 
+        cloneCampaign,
         startCampaign, 
         pauseCampaign, 
         stopCampaign, 
         restartCampaign 
     } = useCampaigns();
 
-    const handleAction = useCallback((action: CampaignsAction) => {
+    const handleAction = useCallback(async (action: CampaignsAction) => {
         switch (action.type) {
             case 'edit':
                 router.push(`/campaigns/create?campaignId=${action.id}`);
+                break;
+            case 'clone':
+                try {
+                    const clonedCampaign = await cloneCampaign(action.id);
+                    // Перенаправляем на редактирование клонированной кампании
+                    router.push(`/campaigns/create?campaignId=${clonedCampaign.id}`);
+                } catch (error) {
+                    console.error('Failed to clone campaign:', error);
+                    alert('Ошибка при клонировании кампании');
+                }
                 break;
             case 'delete':
                 if (window.confirm('Are you sure you want to delete this campaign?')) {
@@ -47,7 +58,7 @@ export default function CampaignsPage() {
             default:
                 break;
         }
-    }, [deleteCampaign, pauseCampaign, restartCampaign, router, startCampaign, stopCampaign]);
+    }, [cloneCampaign, deleteCampaign, pauseCampaign, restartCampaign, router, startCampaign, stopCampaign]);
 
     const columns = useMemo(() => getCampaignsColumns({ onAction: handleAction }), [handleAction]);
 

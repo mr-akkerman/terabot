@@ -1,7 +1,7 @@
 'use client';
 
 import { ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Play, Pause, Square, Trash2, Edit } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Play, Pause, Square, Trash2, Edit, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,8 @@ export type CampaignsAction =
   | { type: 'stop'; id: string }
   | { type: 'edit'; id: string }
   | { type: 'delete'; id: string }
-  | { type: 'restart'; id: string };
+  | { type: 'restart'; id: string }
+  | { type: 'clone'; id: string };
 
 type GetColumnsOptions = {
     onAction: (action: CampaignsAction) => void;
@@ -149,6 +150,16 @@ export const getCampaignsColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
+
+            <DropdownMenuItem 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction({ type: 'clone', id: campaign.id });
+                }}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Clone
+            </DropdownMenuItem>
 
             <DropdownMenuItem 
                 onClick={(e) => {

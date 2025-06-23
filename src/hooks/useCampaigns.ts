@@ -69,6 +69,31 @@ export const useCampaigns = () => {
         },
     });
 
+    const cloneCampaignMutation = useMutation({
+        mutationFn: async (id: string) => {
+            const originalCampaign = await campaignStore.get(id);
+            if (!originalCampaign) {
+                throw new Error('Campaign not found');
+            }
+
+            // Создаем клон кампании
+            const clonedCampaign: Campaign = {
+                ...originalCampaign,
+                id: uuidv4(),
+                name: `${originalCampaign.name} - копия`,
+                createdAt: new Date(),
+                status: 'draft',
+                progress: undefined, // Очищаем прогресс
+            };
+
+            await campaignStore.add(clonedCampaign);
+            return clonedCampaign;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: [CAMPAIGNS_QUERY_KEY] });
+        },
+    });
+
     return {
         campaigns,
         isLoading,
@@ -76,8 +101,10 @@ export const useCampaigns = () => {
         addCampaign: addCampaignMutation.mutateAsync,
         updateCampaign: updateCampaignMutation.mutateAsync,
         deleteCampaign: deleteCampaignMutation.mutateAsync,
+        cloneCampaign: cloneCampaignMutation.mutateAsync,
         isAdding: addCampaignMutation.isPending,
         isUpdating: updateCampaignMutation.isPending,
+        isCloning: cloneCampaignMutation.isPending,
         startCampaign: controls.run,
         pauseCampaign: controls.pause,
         stopCampaign: controls.stop,
