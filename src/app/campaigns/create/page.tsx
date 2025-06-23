@@ -3,6 +3,8 @@
 import { CampaignForm } from '@/components/campaigns/CampaignForm';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
+import { Suspense } from 'react';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function CreateCampaignPage() {
     return (
@@ -16,7 +18,9 @@ export default function CreateCampaignPage() {
                     Back to Campaigns
                 </Link>
             </div>
-            <CampaignForm />
+            <Suspense fallback={<LoadingSpinner />}>
+                <CampaignForm />
+            </Suspense>
         </div>
     );
 } 
