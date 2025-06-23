@@ -2,7 +2,6 @@
 
 import { useParams } from 'next/navigation';
 import { useCampaignDetails } from '@/hooks/useCampaignDetails';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { CampaignStats } from '@/components/campaigns/details/CampaignStats';

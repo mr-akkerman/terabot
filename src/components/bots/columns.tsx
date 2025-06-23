@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import type { Bot } from '@/types';
-import { cn } from '@/lib/utils';
 
 
 export type BotsAction =
