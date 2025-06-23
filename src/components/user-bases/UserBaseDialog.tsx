@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
 import * as z from 'zod';
-import { PlusCircle, Trash2 } from 'lucide-react';
+import { PlusCircle, Trash2, Upload } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +37,7 @@ import { testApiSource } from '@/utils/api';
 import type { UserBase } from '@/types';
 import { cn } from '@/lib/utils';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
+import { useCallback } from 'react';
 
 // Схема валидации
 const formSchema = z.object({
@@ -103,9 +104,55 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
 
   const watchType = form.watch('type');
 
+  // Функция для загрузки файла
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Проверяем тип файла
+    if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
+      alert('Пожалуйста, выберите текстовый файл (.txt)');
+      return;
+    }
+
+    // Проверяем размер файла (максимум 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Файл слишком большой. Максимальный размер: 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      if (content) {
+        // Устанавливаем содержимое файла в textarea
+        form.setValue('rawUserIds', content);
+        
+        // Показываем количество найденных ID
+        const userIds = content.split(/[,\s\n]+/).filter(Boolean);
+        const validIds = userIds.map(id => parseInt(id.trim(), 10)).filter(Number.isFinite);
+        
+        if (validIds.length > 0) {
+          alert(`Загружено ${validIds.length} пользователей из файла "${file.name}"`);
+        } else {
+          alert('В файле не найдено валидных ID пользователей');
+        }
+      }
+    };
+    
+    reader.onerror = () => {
+      alert('Ошибка при чтении файла');
+    };
+    
+    reader.readAsText(file);
+    
+    // Очищаем input для возможности повторной загрузки того же файла
+    event.target.value = '';
+  }, [form]);
+
   const onSubmit = async (data: UserBaseFormValues) => {
     if (data.type === 'static') {
-        const userIds = data.rawUserIds?.split(/[,\\s\\n]+/).filter(Boolean).map(id => parseInt(id.trim(), 10)).filter(Number.isFinite) || [];
+        const userIds = data.rawUserIds?.split(/[,\s\n]+/).filter(Boolean).map(id => parseInt(id.trim(), 10)).filter(Number.isFinite) || [];
         const staticPayload: Omit<import('@/types').StaticUserBase, 'id' | 'createdAt'> = {
             type: 'static',
             name: data.name,
@@ -231,12 +278,52 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
               name="rawUserIds"
               render={({ field }) => (
                   <FormItem>
-                  <FormLabel>User IDs</FormLabel>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>User IDs</FormLabel>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="userIds-file-upload"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById('userIds-file-upload')?.click()}
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        Upload File
+                      </Button>
+                    </div>
+                  </div>
                   <FormControl>
-                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line" className="min-h-[150px] font-mono" {...field} />
+                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line. Or use the Upload File button above." className="min-h-[150px] font-mono" {...field} />
                   </FormControl>
                   <FormDescription>
-                      Preview: {form.watch('rawUserIds')?.split(/[,\\s\\n]+/).filter(Boolean).slice(0, 10).join(', ') || '...'}
+                      {(() => {
+                        const rawIds = form.watch('rawUserIds');
+                        if (!rawIds) return 'Preview: ...';
+                        
+                        const userIds = rawIds.split(/[,\s\n]+/).filter(Boolean);
+                        const validIds = userIds.map(id => parseInt(id.trim(), 10)).filter(Number.isFinite);
+                        const previewIds = validIds.slice(0, 10).join(', ');
+                        
+                        return (
+                          <span>
+                            <strong>Found {validIds.length} valid IDs</strong>
+                            {validIds.length > 0 && (
+                              <>
+                                <br />
+                                Preview: {previewIds}
+                                {validIds.length > 10 && '...'}
+                              </>
+                            )}
+                          </span>
+                        );
+                      })()}
                   </FormDescription>
                   <FormMessage />
                   </FormItem>
