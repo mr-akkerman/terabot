@@ -25,7 +25,7 @@ export const useCampaigns = () => {
         },
     });
 
-    const getCampaignQuery = (id: string) => {
+    const useGetCampaignQuery = (id: string) => {
         return useQuery<Campaign | undefined>({
             queryKey: [CAMPAIGNS_QUERY_KEY, id],
             queryFn: () => campaignStore.get(id),
@@ -72,7 +72,7 @@ export const useCampaigns = () => {
     return {
         campaigns,
         isLoading,
-        getCampaignQuery,
+        getCampaignQuery: useGetCampaignQuery,
         addCampaign: addCampaignMutation.mutateAsync,
         updateCampaign: updateCampaignMutation.mutateAsync,
         deleteCampaign: deleteCampaignMutation.mutateAsync,
