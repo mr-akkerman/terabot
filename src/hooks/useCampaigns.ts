@@ -76,6 +76,8 @@ export const useCampaigns = () => {
         addCampaign: addCampaignMutation.mutateAsync,
         updateCampaign: updateCampaignMutation.mutateAsync,
         deleteCampaign: deleteCampaignMutation.mutateAsync,
+        isAdding: addCampaignMutation.isPending,
+        isUpdating: updateCampaignMutation.isPending,
         startCampaign: controls.run,
         pauseCampaign: controls.pause,
         stopCampaign: controls.stop,

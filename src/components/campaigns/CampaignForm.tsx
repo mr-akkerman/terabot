@@ -28,7 +28,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUserBases, useCampaigns, useBots } from '@/hooks';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
-import type { Campaign } from '@/types';
+import type { Campaign, CampaignMessageButton } from '@/types';
 import { MarkdownEditor } from '../ui/MarkdownEditor';
 import { TelegramPreview } from './TelegramPreview';
 import { validateTelegramHtml } from '@/lib/telegram-html';
@@ -175,7 +175,7 @@ export function CampaignForm() {
             onError: handleError,
         });
     } else {
-        addCampaign(campaignData as any, {
+        addCampaign(campaignData as Omit<Campaign, 'id' | 'createdAt' | 'status'>, {
             onSuccess: handleSuccess,
             onError: handleError,
         });
@@ -273,7 +273,7 @@ export function CampaignForm() {
                                 botName={bots?.find(b => b.id === form.getValues('botId'))?.name}
                                 message={watchedMessage.text}
                                 photo={watchedMessage.photo}
-                                buttons={previewButtons as any}
+                                buttons={previewButtons as CampaignMessageButton[][]}
                              />
                         </CardContent>
                     </Card>
