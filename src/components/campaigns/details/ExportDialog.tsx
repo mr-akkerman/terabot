@@ -117,4 +117,79 @@ export const ExportDialog = ({ isOpen, setIsOpen, data, campaignName }: ExportDi
       </DialogContent>
     </Dialog>
   );
+};
+
+interface ExportSuccessfulUsersDialogProps {
+  isOpen: boolean;
+  setIsOpen: (isOpen: boolean) => void;
+  data: CampaignRecipient[];
+  campaignName: string;
+}
+
+export const ExportSuccessfulUsersDialog = ({ 
+  isOpen, 
+  setIsOpen, 
+  data, 
+  campaignName 
+}: ExportSuccessfulUsersDialogProps) => {
+  const [isExporting, setIsExporting] = React.useState(false);
+  
+  // Подсчитываем количество успешных получателей
+  const successfulCount = React.useMemo(() => {
+    return data.filter(r => r.status === 'success').length;
+  }, [data]);
+
+  const handleExport = () => {
+    setIsExporting(true);
+    
+    setTimeout(() => {
+        const result = ExportService.exportSuccessfulRecipientsForUserBase(data, campaignName);
+        setIsExporting(false);
+        setIsOpen(false);
+        
+        if (result) {
+          // Показываем уведомление об успешном экспорте
+          const message = `Экспортировано ${result.count} успешных получателей`;
+          if (typeof window !== 'undefined' && 'Notification' in window) {
+            new Notification('Экспорт завершен', { body: message });
+          } else {
+            alert(message);
+          }
+        }
+    }, 300);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Export Successful Recipients</DialogTitle>
+          <DialogDescription>
+            Export user IDs of successful recipients to create a new user base.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-green-600">{successfulCount}</p>
+            <p className="text-sm text-muted-foreground">successful recipients found</p>
+            <p className="mt-4 text-sm">
+              This will export a text file with user IDs (one per line) that you can 
+              use to create a new static user base.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isExporting}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleExport} 
+            disabled={isExporting || successfulCount === 0}
+          >
+            {isExporting ? <LoadingSpinner /> : `Export ${successfulCount} User IDs`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }; 

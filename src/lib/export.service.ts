@@ -42,4 +42,30 @@ export const ExportService = {
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
         downloadFile(blob, filename);
     },
+
+    /**
+     * Экспорт успешных получателей в формате для создания новой базы пользователей
+     */
+    exportSuccessfulRecipientsForUserBase(data: CampaignRecipient[], campaignName: string, filename?: string) {
+        // Фильтруем только успешных получателей
+        const successfulRecipients = data.filter(recipient => recipient.status === 'success');
+        
+        if (successfulRecipients.length === 0) {
+            alert('Нет успешных получателей для экспорта');
+            return;
+        }
+
+        // Извлекаем только userId в формате, подходящем для rawUserIds
+        const userIds = successfulRecipients.map(recipient => recipient.userId);
+        const userIdsText = userIds.join('\n');
+
+        const finalFilename = filename || `${campaignName.replace(/ /g, '_')}_successful_users.txt`;
+        const blob = new Blob([userIdsText], { type: 'text/plain;charset=utf-8;' });
+        downloadFile(blob, finalFilename);
+
+        return {
+            count: successfulRecipients.length,
+            userIds: userIds
+        };
+    },
 }; 
