@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import { UploadCloud, X, AlertTriangle } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { useFormContext, Controller } from 'react-hook-form';
+import Image from 'next/image';
 
 import { LoadingSpinner } from '../ui/LoadingSpinner';
 
@@ -80,7 +81,7 @@ export function ImageUploader({ value, onChange }: ImageUploaderProps) {
         <div className="space-y-2">
             {preview ? (
                 <div className="relative group w-full aspect-video rounded-md overflow-hidden">
-                    <img src={preview} alt="Preview" className="w-full h-full object-contain bg-secondary/50" />
+                    <Image src={preview} alt="Preview" fill className="object-contain bg-secondary/50" />
                     <div className="absolute top-2 right-2">
                         <button
                             type="button"

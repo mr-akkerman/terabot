@@ -5,6 +5,7 @@ import { sanitizeAndFormatHtml } from "@/lib/telegram-html";
 import { cn } from "@/lib/utils";
 import type { CampaignMessageButton } from "@/types";
 import { Button } from "../ui/button";
+import Image from 'next/image';
 
 interface TelegramPreviewProps {
     botName?: string;
@@ -31,8 +32,8 @@ export function TelegramPreview({
             </CardHeader>
             <CardContent className="p-0">
                 {photo && (
-                    <div className="aspect-video bg-secondary/50">
-                        <img src={photo} alt="Preview" className="w-full h-full object-contain" />
+                    <div className="relative aspect-video bg-secondary/50">
+                        <Image src={photo} alt="Preview" fill className="object-contain" />
                     </div>
                 )}
                 <div className="p-4 space-y-3">
