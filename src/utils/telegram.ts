@@ -51,7 +51,7 @@ export class TelegramAPI {
   private readonly baseUrl: string;
 
   constructor(
-    private token: string,
+    public readonly token: string,
     private options: { logger?: (msg: string) => void } = {},
   ) {
     if (!token) {

@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { testApiSource } from '@/utils/api';
-import type { UserBase } from '@/types';
+import type { ApiUserBase } from '@/types';
 
-type ApiSource = Pick<UserBase, 'apiUrl' | 'apiMethod' | 'apiHeaders'>;
+type ApiSource = Pick<ApiUserBase, 'apiUrl' | 'apiMethod' | 'apiHeaders'>;
 
 interface UseApiTester {
   isLoading: boolean;
