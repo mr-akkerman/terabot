@@ -50,12 +50,12 @@ export function useBots() {
                 lastCheckedAt: new Date(),
                 lastError: undefined,
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             await botStore.update({
                 ...bot,
                 lastCheckStatus: 'failed',
                 lastCheckedAt: new Date(),
-                lastError: error.message,
+                lastError: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     },
