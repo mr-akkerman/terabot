@@ -40,7 +40,7 @@ export const columns: ColumnDef<CampaignRecipient>[] = [
         const date = new Date(timestamp as string);
         if (isNaN(date.getTime())) return 'Invalid Date';
         return <span>{format(date, 'PPP p')}</span>;
-      } catch (e) {
+      } catch {
         return 'Invalid Date';
       }
     },

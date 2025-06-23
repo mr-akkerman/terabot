@@ -6,8 +6,7 @@ import { GripVertical, PlusCircle, Trash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import {
   SortableContext,
-  horizontalListSortingStrategy,
-  arrayMove
+  horizontalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core';
 

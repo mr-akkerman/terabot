@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { campaignStore, campaignRecipientStore } from '@/lib/db';
+import { campaignRecipientStore } from '@/lib/db';
 import { useCampaigns } from './useCampaigns';
 
 export const useCampaignDetails = (campaignId: string) => {

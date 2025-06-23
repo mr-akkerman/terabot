@@ -8,8 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { CampaignFormValues } from './CampaignForm';
-import type { CampaignMessageButton } from '@/types';
-import type { FieldArrayWithId } from 'react-hook-form';
 
 interface EditableButtonProps {
   id: string;

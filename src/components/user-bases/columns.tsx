@@ -26,11 +26,6 @@ type GetColumnsOptions = {
     onAction: (action: UserBasesAction) => void;
 }
 
-const typeVariantMap = {
-    static: 'outline',
-    api: 'default'
-}
-
 const statusIconMap = {
     success: <CheckCircle className="h-4 w-4 text-green-500" />,
     failed: <XCircle className="h-4 w-4 text-red-500" />,

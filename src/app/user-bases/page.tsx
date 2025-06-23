@@ -20,7 +20,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useUserBases } from '@/hooks';
-import { useApiTester } from '@/hooks/useApiTester';
 import { getUserBasesColumns, UserBasesAction } from '@/components/user-bases/columns';
 
 export default function UserBasesPage() {

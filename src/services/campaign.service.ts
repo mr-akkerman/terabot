@@ -1,5 +1,5 @@
 import { CampaignRunner } from '@/lib/campaign-runner';
-import type { Campaign, CampaignProgress, UserBase, Bot } from '@/types';
+import type { Campaign, CampaignProgress } from '@/types';
 import { campaignStore, userBaseStore, botStore, campaignRecipientStore } from '@/lib/db';
 
 class CampaignManager {

@@ -17,7 +17,7 @@ interface ImageUploaderProps {
 }
 
 export function ImageUploader({ value, onChange }: ImageUploaderProps) {
-  const { control, setValue, watch } = useFormContext();
+  const { control } = useFormContext();
   const [preview, setPreview] = useState<string | null>(value || null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);

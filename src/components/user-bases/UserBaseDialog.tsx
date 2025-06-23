@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
 import * as z from 'zod';
 import { PlusCircle, Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -72,16 +71,20 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   const { addUserBase, updateUserBase } = useUserBases();
   const apiTester = useApiTester();
 
+  // Type Guards для безопасной проверки типов
+  const isApiUserBase = (ub: UserBase): ub is import('@/types').ApiUserBase => ub.type === 'api';
+  const isStaticUserBase = (ub: UserBase): ub is import('@/types').StaticUserBase => ub.type === 'static';
+
   const form = useForm<UserBaseFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: userBase ? {
       name: userBase.name,
       description: userBase.description || '',
       type: userBase.type,
-      rawUserIds: userBase.type === 'static' ? userBase.userIds?.join('\n') : '',
-      apiUrl: userBase.apiUrl || '',
-      apiMethod: userBase.apiMethod || 'GET',
-      apiHeaders: userBase.apiHeaders || [],
+      rawUserIds: isStaticUserBase(userBase) ? userBase.userIds?.join('\n') || '' : '',
+      apiUrl: isApiUserBase(userBase) ? userBase.apiUrl : '',
+      apiMethod: isApiUserBase(userBase) ? userBase.apiMethod || 'GET' : 'GET',
+      apiHeaders: isApiUserBase(userBase) ? userBase.apiHeaders || [] : [],
     } : {
       name: '',
       description: '',
@@ -101,35 +104,65 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   const watchType = form.watch('type');
 
   const onSubmit = async (data: UserBaseFormValues) => {
-    let finalPayload: Partial<UserBase> = { ...data };
-
     if (data.type === 'static') {
         const userIds = data.rawUserIds?.split(/[,\\s\\n]+/).filter(Boolean).map(id => parseInt(id.trim(), 10)).filter(Number.isFinite) || [];
-        finalPayload = { ...finalPayload, userIds, userCount: userIds.length, lastCheckStatus: 'success', lastCheckedAt: new Date() };
-    } else {
-        const result = await testApiSource(data as any);
-        if (result.success) {
-            finalPayload = { ...finalPayload, userIds: result.data, userCount: result.userCount, lastCheckStatus: 'success', lastCheckedAt: new Date(), lastError: undefined };
+        const staticPayload: Omit<import('@/types').StaticUserBase, 'id' | 'createdAt'> = {
+            type: 'static',
+            name: data.name,
+            description: data.description,
+            rawUserIds: data.rawUserIds || '',
+            userIds,
+            userCount: userIds.length,
+            lastCheckStatus: 'success',
+            lastCheckedAt: new Date()
+        };
+        
+        if (userBase) {
+            updateUserBase({ ...userBase, ...staticPayload });
         } else {
-            finalPayload = { ...finalPayload, userIds: [], userCount: 0, lastCheckStatus: 'failed', lastCheckedAt: new Date(), lastError: result.error };
+            addUserBase(staticPayload);
+        }
+    } else {
+        const result = await testApiSource({
+            apiUrl: data.apiUrl!,
+            apiMethod: data.apiMethod,
+            apiHeaders: data.apiHeaders
+        });
+        
+        const apiPayload: Omit<import('@/types').ApiUserBase, 'id' | 'createdAt'> = {
+            type: 'api',
+            name: data.name,
+            description: data.description,
+            apiUrl: data.apiUrl!,
+            apiMethod: data.apiMethod,
+            apiHeaders: data.apiHeaders,
+            userIds: result.success ? result.data : [],
+            userCount: result.success ? result.userCount : 0,
+            lastCheckStatus: result.success ? 'success' : 'failed',
+            lastCheckedAt: new Date(),
+            lastError: result.success ? undefined : result.error
+        };
+        
+        if (userBase) {
+            updateUserBase({ ...userBase, ...apiPayload });
+        } else {
+            addUserBase(apiPayload);
         }
     }
     
-    if (userBase) {
-      updateUserBase({ ...userBase, ...finalPayload });
-    } else {
-      addUserBase(finalPayload as Omit<UserBase, 'id' | 'createdAt'>);
-    }
     setIsOpen(false);
   };
   
   const handleTestSource = () => {
     const formData = form.getValues();
-    apiTester.testSource({
-        apiUrl: formData.apiUrl,
-        apiMethod: formData.apiMethod,
-        apiHeaders: formData.apiHeaders,
-    });
+    // Только тестируем если тип API и есть URL
+    if (formData.type === 'api' && formData.apiUrl) {
+      apiTester.testSource({
+          apiUrl: formData.apiUrl,
+          apiMethod: formData.apiMethod,
+          apiHeaders: formData.apiHeaders,
+      });
+    }
   }
 
   return (
