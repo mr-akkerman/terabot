@@ -111,27 +111,39 @@ export const getCampaignsColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             
             {(campaign.status === 'draft' || campaign.status === 'paused' || campaign.status === 'stopped') && (
-              <DropdownMenuItem onClick={() => onAction({ type: 'run', id: campaign.id })}>
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                onAction({ type: 'run', id: campaign.id });
+              }}>
                 <Play className="mr-2 h-4 w-4" />
                 {campaign.status === 'paused' ? 'Resume' : 'Start'}
               </DropdownMenuItem>
             )}
 
             {campaign.status === 'running' && (
-                <DropdownMenuItem onClick={() => onAction({ type: 'pause', id: campaign.id })}>
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  onAction({ type: 'pause', id: campaign.id });
+                }}>
                     <Pause className="mr-2 h-4 w-4" />
                     Pause
                 </DropdownMenuItem>
             )}
 
             {isRunningOrPaused && (
-                <DropdownMenuItem className="text-destructive" onClick={() => onAction({ type: 'stop', id: campaign.id })}>
+                <DropdownMenuItem className="text-destructive" onClick={(e) => {
+                  e.stopPropagation();
+                  onAction({ type: 'stop', id: campaign.id });
+                }}>
                     <Square className="mr-2 h-4 w-4" />
                     Stop
                 </DropdownMenuItem>
             )}
 
-            <DropdownMenuItem onClick={() => onAction({ type: 'restart', id: campaign.id })}>
+            <DropdownMenuItem onClick={(e) => {
+              e.stopPropagation();
+              onAction({ type: 'restart', id: campaign.id });
+            }}>
               <Edit className="mr-2 h-4 w-4" />
               Restart
             </DropdownMenuItem>
@@ -139,7 +151,10 @@ export const getCampaignsColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
             <DropdownMenuSeparator />
 
             <DropdownMenuItem 
-                onClick={() => onAction({ type: 'edit', id: campaign.id })}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction({ type: 'edit', id: campaign.id });
+                }}
                 disabled={isRunningOrPaused}
             >
               <Edit className="mr-2 h-4 w-4" />
@@ -147,7 +162,10 @@ export const getCampaignsColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
             </DropdownMenuItem>
             <DropdownMenuItem 
                 className="text-destructive" 
-                onClick={() => onAction({ type: 'delete', id: campaign.id })}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction({ type: 'delete', id: campaign.id });
+                }}
                 disabled={isRunningOrPaused}
             >
               <Trash2 className="mr-2 h-4 w-4" />
