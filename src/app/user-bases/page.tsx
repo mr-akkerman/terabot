@@ -82,7 +82,7 @@ export default function UserBasesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the user base "{selectedUserBase?.name}".
+              This action cannot be undone. This will permanently delete the user base &quot;{selectedUserBase?.name}&quot;.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
