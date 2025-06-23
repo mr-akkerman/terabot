@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useState, useEffect } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, FileRejection } from 'react-dropzone';
 import { UploadCloud, X, AlertTriangle } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { useFormContext, Controller } from 'react-hook-form';
@@ -23,7 +23,7 @@ export function ImageUploader({ value, onChange }: ImageUploaderProps) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const onDrop = useCallback(async (acceptedFiles: File[], fileRejections: any[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[], fileRejections: FileRejection[]) => {
     setError(null);
     if (fileRejections.length > 0) {
       setError(fileRejections[0].errors[0].message);
