@@ -8,10 +8,11 @@ import { CampaignStats } from '@/components/campaigns/details/CampaignStats';
 import { RecipientLogs } from '@/components/campaigns/details/RecipientLogs';
 import { RealtimeChart } from '@/components/campaigns/details/RealtimeChart';
 import { RecipientTable } from '@/components/campaigns/details/RecipientTable';
+import { ExportDialog, ExportSuccessfulUsersDialog } from '@/components/campaigns/details/ExportDialog';
 import { useCampaignControls } from '@/hooks/useCampaignControls';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, RefreshCw } from 'lucide-react';
-
+import { Play, Pause, Square, RefreshCw, Download, Users } from 'lucide-react';
+import { useState, useMemo } from 'react';
 
 export default function CampaignDetailPage() {
     const params = useParams();
@@ -19,11 +20,21 @@ export default function CampaignDetailPage() {
     
     const { campaign, recipients, isLoading } = useCampaignDetails(campaignId);
     const { run, pause, stop, restart, isLoading: isControlLoading } = useCampaignControls();
+    const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+    const [isExportSuccessfulDialogOpen, setIsExportSuccessfulDialogOpen] = useState(false);
+
+    // Подсчитываем количество успешных получателей
+    const successfulRecipientsCount = useMemo(() => {
+        return recipients?.filter(r => r.status === 'success').length || 0;
+    }, [recipients]);
 
     if (isLoading) return <LoadingSpinner />;
     if (!campaign) return <ErrorMessage message="Campaign not found." />;
 
     const controlsDisabled = isControlLoading || ['completed', 'loading-users'].includes(campaign.status);
+    // Показываем кнопки экспорта только если есть данные для экспорта
+    const hasRecipientsData = recipients && recipients.length > 0;
+    const hasSuccessfulRecipients = successfulRecipientsCount > 0;
 
     return (
         <div className="space-y-6">
@@ -55,6 +66,18 @@ export default function CampaignDetailPage() {
                         <RefreshCw className="mr-2 h-4 w-4" />
                         Restart
                     </Button>
+                    {hasRecipientsData && (
+                        <Button onClick={() => setIsExportDialogOpen(true)} variant="outline">
+                            <Download className="mr-2 h-4 w-4" />
+                            Export Results
+                        </Button>
+                    )}
+                    {hasSuccessfulRecipients && (
+                        <Button onClick={() => setIsExportSuccessfulDialogOpen(true)} variant="outline">
+                            <Users className="mr-2 h-4 w-4" />
+                            Export Recipients ({successfulRecipientsCount})
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -65,6 +88,24 @@ export default function CampaignDetailPage() {
             <RecipientTable recipients={recipients} />
 
             <RecipientLogs recipients={recipients} />
+
+            {hasRecipientsData && (
+                <ExportDialog
+                    isOpen={isExportDialogOpen}
+                    setIsOpen={setIsExportDialogOpen}
+                    data={recipients}
+                    campaignName={campaign.name}
+                />
+            )}
+
+            {hasSuccessfulRecipients && (
+                <ExportSuccessfulUsersDialog
+                    isOpen={isExportSuccessfulDialogOpen}
+                    setIsOpen={setIsExportSuccessfulDialogOpen}
+                    data={recipients}
+                    campaignName={campaign.name}
+                />
+            )}
         </div>
     );
 } 
