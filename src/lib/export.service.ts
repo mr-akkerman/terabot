@@ -26,7 +26,7 @@ export const ExportService = {
 
         for (const row of data) {
             const values = headers.map(header => {
-                const value = (row as any)[header];
+                const value = row[header as keyof CampaignRecipient];
                 if (value === null || value === undefined) return '';
                 // Escape commas and quotes
                 let stringValue = String(value);

@@ -148,12 +148,12 @@ export const botStore = {
 
 // 6. CRUD операции для Settings
 export const settingsStore = {
-  async get(key: string): Promise<any> {
+  async get<T = unknown>(key: string): Promise<T | undefined> {
     const db = await initDB();
     const result = await db.get('settings', key);
     return result?.value;
   },
-  async set(key: string, value: any): Promise<string> {
+  async set(key: string, value: unknown): Promise<string> {
     const db = await initDB();
     return db.put('settings', { key, value });
   }

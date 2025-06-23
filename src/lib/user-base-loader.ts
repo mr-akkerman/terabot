@@ -77,7 +77,7 @@ export class UserBaseLoader {
         const data = await response.json();
         
         // Ожидаем, что API вернет массив чисел или массив объектов с полем 'id'
-        let rawIds: any[];
+        let rawIds: unknown[];
         if (Array.isArray(data)) {
             rawIds = data;
         } else if (data && typeof data === 'object' && Array.isArray(data.users)) { // Пример для { "users": [...] }

@@ -7,13 +7,13 @@ type SendApiMethods = 'sendMessage' | 'sendPhoto';
 interface QueueItem<T> {
   method: SendApiMethods;
   payload: T;
-  resolve: (value: any) => void;
-  reject: (reason?: any) => void;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
   retryCount: number;
 }
 
 export class TelegramLimiter {
-  private queue: QueueItem<any>[] = [];
+  private queue: QueueItem<SendMessagePayload | SendPhotoPayload>[] = [];
   private api: TelegramAPI;
   private isRunning = false;
   private timer: NodeJS.Timeout | null = null;
@@ -37,7 +37,7 @@ export class TelegramLimiter {
     }
   }
 
-  public enqueue<T extends SendMessagePayload | SendPhotoPayload>(method: SendApiMethods, payload: T): Promise<any> {
+  public enqueue<T extends SendMessagePayload | SendPhotoPayload>(method: SendApiMethods, payload: T): Promise<unknown> {
     return new Promise((resolve, reject) => {
       this.queue.push({ method, payload, resolve, reject, retryCount: 0 });
     });
