@@ -21,10 +21,10 @@ export function useUserBases() {
   const { mutate: addUserBase } = useMutation({
     mutationFn: (newUserBase: Omit<UserBase, 'id' | 'createdAt'>) => {
       const fullUserBase: UserBase = {
+        ...newUserBase,
         id: crypto.randomUUID(),
         createdAt: new Date(),
-        ...newUserBase,
-      };
+      } as UserBase;
       return userBaseStore.add(fullUserBase);
     },
     onSuccess: () => {
