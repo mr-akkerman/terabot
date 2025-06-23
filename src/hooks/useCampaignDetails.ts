@@ -12,7 +12,7 @@ export const useCampaignDetails = (campaignId: string) => {
         queryKey: ['campaignRecipients', campaignId],
         queryFn: () => campaignRecipientStore.getByCampaignId(campaignId),
         enabled: !!campaignId,
-        refetchInterval: (query) => {
+        refetchInterval: () => {
             const isCampaignActive = campaign?.status === 'running' || campaign?.status === 'loading-users';
             return isCampaignActive ? 2000 : false;
         },
