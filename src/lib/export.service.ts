@@ -57,7 +57,7 @@ export const ExportService = {
 
         // Извлекаем только userId в формате, подходящем для rawUserIds
         const userIds = successfulRecipients.map(recipient => recipient.userId);
-        const userIdsText = userIds.join('\n');
+        const userIdsText = userIds.join(', ');
 
         const finalFilename = filename || `${campaignName.replace(/ /g, '_')}_successful_users.txt`;
         const blob = new Blob([userIdsText], { type: 'text/plain;charset=utf-8;' });
