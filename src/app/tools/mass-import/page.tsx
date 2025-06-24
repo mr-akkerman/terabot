@@ -201,6 +201,8 @@ export default function MassImportPage() {
           rawUserIds: userIds,
           userIds: chunk.map(item => item.user_id),
           userCount: chunk.length,
+          lastCheckStatus: 'success' as const,
+          lastCheckedAt: new Date(),
         };
         
         addUserBase(userBase);
