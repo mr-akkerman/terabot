@@ -68,4 +68,29 @@ export const ExportService = {
             userIds: userIds
         };
     },
+
+    /**
+     * Экспорт пользователей из базы в формате списка через запятую
+     */
+    exportUserBaseAsCommaList(userIds: number[], userBaseName: string, filename?: string) {
+        if (userIds.length === 0) {
+            alert('База пользователей пуста - нечего экспортировать');
+            return;
+        }
+
+        // Создаем список ID через запятую
+        const userIdsText = userIds.join(', ');
+
+        // Генерируем имя файла
+        const finalFilename = filename || `${userBaseName.replace(/[^a-zA-Z0-9_-]/g, '_')}_users.txt`;
+        
+        // Создаем и скачиваем файл
+        const blob = new Blob([userIdsText], { type: 'text/plain;charset=utf-8;' });
+        downloadFile(blob, finalFilename);
+
+        return {
+            count: userIds.length,
+            filename: finalFilename
+        };
+    },
 }; 

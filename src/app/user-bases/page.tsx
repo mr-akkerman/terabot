@@ -26,7 +26,7 @@ export default function UserBasesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [selectedUserBase, setSelectedUserBase] = useState<UserBase | undefined>(undefined);
-  const { userBases, isLoading, error, deleteUserBase, checkUserBase } = useUserBases();
+  const { userBases, isLoading, error, deleteUserBase, checkUserBase, exportUserBase } = useUserBases();
 
   const handleAction = useCallback((action: UserBasesAction) => {
     switch (action.type) {
@@ -41,8 +41,11 @@ export default function UserBasesPage() {
       case 'check':
         checkUserBase(action.userBase.id);
         break;
+      case 'export':
+        exportUserBase(action.userBase);
+        break;
     }
-  }, [checkUserBase]);
+  }, [checkUserBase, exportUserBase]);
 
   const columns = useMemo(() => getUserBasesColumns({ onAction: handleAction }), [handleAction]);
 

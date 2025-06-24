@@ -1,7 +1,7 @@
 'use client';
 
 import { ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown, Trash2, Edit, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, Trash2, Edit, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,8 @@ import type { UserBase } from '@/types';
 export type UserBasesAction =
   | { type: 'edit'; userBase: UserBase }
   | { type: 'delete'; userBase: UserBase }
-  | { type: 'check'; userBase: UserBase };
+  | { type: 'check'; userBase: UserBase }
+  | { type: 'export'; userBase: UserBase };
 
 type GetColumnsOptions = {
     onAction: (action: UserBasesAction) => void;
@@ -122,6 +123,13 @@ export const getUserBasesColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
                     Re-check API
                 </DropdownMenuItem>
              )}
+            {/* Показываем экспорт только если есть пользователи */}
+            {(userBase.userCount ?? 0) > 0 && (
+                <DropdownMenuItem onClick={() => onAction({ type: 'export', userBase })}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Users
+                </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => onAction({ type: 'edit', userBase })}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
