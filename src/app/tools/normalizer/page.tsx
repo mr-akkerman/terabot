@@ -39,6 +39,7 @@ export default function NormalizerPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [lastCreatedBase, setLastCreatedBase] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addUserBase } = useUserBases();
 
@@ -249,10 +250,20 @@ export default function NormalizerPage() {
         lastCheckedAt: new Date(),
       };
       
-      addUserBase(userBase);
-      toast.success(`База "${baseName.trim()}" создана с ${normalizedData.length} пользователями`);
+      await addUserBase(userBase);
+      
+      // Успешное создание базы
+      toast.success(`✅ База "${baseName.trim()}" успешно создана!`, {
+        description: `Добавлено ${normalizedData.length.toLocaleString()} уникальных пользователей`,
+        duration: 5000,
+      });
+      
+      // Очищаем поле имени после успешного создания
+      setLastCreatedBase(baseName.trim());
+      setBaseName('');
+      
     } catch (error) {
-      toast.error('Ошибка при создании базы');
+      toast.error('❌ Ошибка при создании базы');
       console.error(error);
     } finally {
       setIsProcessing(false);
@@ -267,22 +278,8 @@ export default function NormalizerPage() {
     }
 
     try {
-      const jsonData = {
-        metadata: {
-          exportDate: new Date().toISOString(),
-          originalFiles: uploadedFiles.map(f => ({
-            name: f.name,
-            type: f.type,
-            userCount: f.userIds.length
-          })),
-          totalOriginalIds,
-          duplicatesRemoved,
-          uniqueUsers: normalizedData.length
-        },
-        userIds: normalizedData
-      };
-
-      const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+      // Экспортируем только чистый массив ID для совместимости с другими инструментами
+      const blob = new Blob([JSON.stringify(normalizedData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       
       const fileName = baseName.trim() 
@@ -532,6 +529,15 @@ export default function NormalizerPage() {
                  <div className="text-sm text-muted-foreground">
                    Будет создана база с {normalizedData.length.toLocaleString()} пользователями
                  </div>
+                 
+                 {lastCreatedBase && (
+                   <Alert>
+                     <CheckCircle className="h-4 w-4" />
+                     <AlertDescription>
+                       ✅ База "<strong>{lastCreatedBase}</strong>" успешно создана и добавлена в список баз пользователей!
+                     </AlertDescription>
+                   </Alert>
+                 )}
                </CardContent>
              </Card>
 
@@ -542,7 +548,7 @@ export default function NormalizerPage() {
                    Скачать JSON файл
                  </CardTitle>
                  <CardDescription>
-                   Экспортировать результат в JSON файл с метаданными
+                   Экспортировать чистый JSON массив с ID пользователей
                  </CardDescription>
                </CardHeader>
                <CardContent className="space-y-4">
@@ -551,10 +557,9 @@ export default function NormalizerPage() {
                      <strong>Содержимое файла:</strong>
                    </p>
                    <ul className="text-sm text-muted-foreground space-y-1">
-                     <li>• Метаданные обработки</li>
-                     <li>• Информация об исходных файлах</li>
-                     <li>• Статистика дедупликации</li>
-                     <li>• Массив уникальных user_id</li>
+                     <li>• Чистый массив уникальных user_id</li>
+                     <li>• Совместим с другими инструментами</li>
+                     <li>• Готов для импорта в массовый импорт</li>
                    </ul>
                  </div>
                  
