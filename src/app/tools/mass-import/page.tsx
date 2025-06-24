@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,10 @@ import {
   FileText, 
   AlertCircle,
   CheckCircle,
-  Users
+  Users,
+  Eye,
+  BarChart3,
+  Clock
 } from 'lucide-react';
 import { useUserBases } from '@/hooks/useUserBases';
 import { toast } from 'sonner';
@@ -25,18 +28,50 @@ interface UserData {
   user_id: number;
 }
 
+interface ProcessingProgress {
+  current: number;
+  total: number;
+  type: 'export' | 'create';
+}
+
 export default function MassImportPage() {
   const [jsonData, setJsonData] = useState<UserData[]>([]);
   const [chunkSize, setChunkSize] = useState(30000);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { addUserBase } = useUserBases();
 
-  // Обработка загрузки файла
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // Обработка drag&drop
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
 
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    const jsonFile = files.find(file => file.type === 'application/json');
+    
+    if (jsonFile) {
+      processFile(jsonFile);
+    } else {
+      setUploadError('Пожалуйста, перетащите JSON файл');
+    }
+  }, []);
+
+  // Общая функция обработки файла
+  const processFile = useCallback((file: File) => {
     if (file.type !== 'application/json') {
       setUploadError('Пожалуйста, выберите JSON файл');
       return;
@@ -61,9 +96,15 @@ export default function MassImportPage() {
           throw new Error('Не найдено валидных user_id в файле');
         }
 
+        const invalidCount = data.length - validData.length;
+        
         setJsonData(validData);
         setUploadError(null);
-        toast.success(`Загружено ${validData.length} пользователей`);
+        
+        toast.success(
+          `Загружено ${validData.length} пользователей` + 
+          (invalidCount > 0 ? ` (пропущено ${invalidCount} невалидных)` : '')
+        );
       } catch (error) {
         setUploadError(error instanceof Error ? error.message : 'Ошибка парсинга JSON файла');
         setJsonData([]);
@@ -72,6 +113,13 @@ export default function MassImportPage() {
 
     reader.readAsText(file);
   }, []);
+
+  // Обработка загрузки файла
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }, [processFile]);
 
   // Разбивка данных на чанки
   const createChunks = useCallback(() => {
@@ -82,14 +130,15 @@ export default function MassImportPage() {
     return chunks;
   }, [jsonData, chunkSize]);
 
-  // Экспорт в JSON файлы
+  // Экспорт в JSON файлы с прогрессом
   const handleExportFiles = useCallback(async () => {
     if (jsonData.length === 0) return;
 
     setIsProcessing(true);
+    const chunks = createChunks();
+    setProcessingProgress({ current: 0, total: chunks.length, type: 'export' });
+    
     try {
-      const chunks = createChunks();
-      
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         const userIds = chunk.map(item => item.user_id).join(',');
@@ -106,9 +155,11 @@ export default function MassImportPage() {
         
         URL.revokeObjectURL(url);
         
+        setProcessingProgress({ current: i + 1, total: chunks.length, type: 'export' });
+        
         // Небольшая задержка между скачиваниями
         if (i < chunks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
       
@@ -117,17 +168,19 @@ export default function MassImportPage() {
       toast.error('Ошибка при экспорте файлов');
     } finally {
       setIsProcessing(false);
+      setProcessingProgress(null);
     }
   }, [jsonData, createChunks]);
 
-  // Создание готовых баз рассылок
+  // Создание готовых баз рассылок с прогрессом
   const handleCreateUserBases = useCallback(async () => {
     if (jsonData.length === 0) return;
 
     setIsProcessing(true);
+    const chunks = createChunks();
+    setProcessingProgress({ current: 0, total: chunks.length, type: 'create' });
+    
     try {
-      const chunks = createChunks();
-      
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         const userIds = chunk.map(item => item.user_id).join(',');
@@ -143,9 +196,11 @@ export default function MassImportPage() {
         
         addUserBase(userBase);
         
+        setProcessingProgress({ current: i + 1, total: chunks.length, type: 'create' });
+        
         // Небольшая задержка между созданием баз
         if (i < chunks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 50));
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
       
@@ -154,10 +209,12 @@ export default function MassImportPage() {
       toast.error('Ошибка при создании баз');
     } finally {
       setIsProcessing(false);
+      setProcessingProgress(null);
     }
   }, [jsonData, createChunks, addUserBase]);
 
   const chunks = jsonData.length > 0 ? createChunks() : [];
+  const averageChunkSize = chunks.length > 0 ? Math.floor(jsonData.length / chunks.length) : 0;
 
   return (
     <div className="space-y-6">
@@ -169,7 +226,7 @@ export default function MassImportPage() {
         </p>
       </div>
 
-      {/* Загрузка файла */}
+      {/* Загрузка файла с drag&drop */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -177,18 +234,42 @@ export default function MassImportPage() {
             Загрузка JSON файла
           </CardTitle>
           <CardDescription>
-            Выберите JSON файл с массивом объектов, содержащих user_id
+            Выберите или перетащите JSON файл с массивом объектов, содержащих user_id
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="json-file">JSON файл</Label>
+          {/* Drag&Drop зона */}
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              isDragOver 
+                ? 'border-primary bg-primary/5' 
+                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-lg font-medium mb-2">
+              Перетащите JSON файл сюда
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">
+              или нажмите кнопку ниже для выбора файла
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+            >
+              Выбрать файл
+            </Button>
             <Input
-              id="json-file"
+              ref={fileInputRef}
               type="file"
               accept=".json"
               onChange={handleFileUpload}
               disabled={isProcessing}
+              className="hidden"
             />
           </div>
           
@@ -210,44 +291,116 @@ export default function MassImportPage() {
         </CardContent>
       </Card>
 
-      {/* Настройки */}
+      {/* Предварительный просмотр данных */}
       {jsonData.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Настройки разбивки
+              <Eye className="h-5 w-5" />
+              Предварительный просмотр
             </CardTitle>
+            <CardDescription>
+              Первые несколько записей из загруженного файла
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid w-full max-w-sm items-center gap-1.5">
-              <Label htmlFor="chunk-size">Размер чанка</Label>
-              <Input
-                id="chunk-size"
-                type="number"
-                value={chunkSize}
-                onChange={(e) => setChunkSize(Number(e.target.value))}
-                min={1}
-                max={100000}
-                disabled={isProcessing}
-              />
-              <p className="text-sm text-muted-foreground">
-                Количество пользователей в одном чанке (по умолчанию 30,000)
-              </p>
-            </div>
-
-            <div className="flex gap-4 text-sm">
-              <Badge variant="outline">
-                <Users className="h-3 w-3 mr-1" />
-                Всего: {jsonData.length}
-              </Badge>
-              <Badge variant="outline">
-                <FileText className="h-3 w-3 mr-1" />
-                Чанков: {chunks.length}
-              </Badge>
-            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+            >
+              {showPreview ? 'Скрыть' : 'Показать'} данные
+            </Button>
+            
+            {showPreview && (
+              <div className="bg-muted/50 rounded-lg p-4">
+                <div className="text-sm font-mono space-y-1">
+                  {jsonData.slice(0, 10).map((item, index) => (
+                    <div key={index}>
+                      {item.user_id}
+                    </div>
+                  ))}
+                  {jsonData.length > 10 && (
+                    <div className="text-muted-foreground">
+                      ... и еще {jsonData.length - 10} записей
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Настройки и статистика */}
+      {jsonData.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Настройки разбивки
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="chunk-size">Размер чанка</Label>
+                <Input
+                  id="chunk-size"
+                  type="number"
+                  value={chunkSize}
+                  onChange={(e) => setChunkSize(Number(e.target.value))}
+                  min={1}
+                  max={100000}
+                  disabled={isProcessing}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Количество пользователей в одном чанке (по умолчанию 30,000)
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Статистика разбивки
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Всего пользователей:</span>
+                <Badge variant="outline">
+                  <Users className="h-3 w-3 mr-1" />
+                  {jsonData.length.toLocaleString()}
+                </Badge>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Количество чанков:</span>
+                <Badge variant="outline">
+                  <FileText className="h-3 w-3 mr-1" />
+                  {chunks.length}
+                </Badge>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Средний размер чанка:</span>
+                <Badge variant="outline">
+                  <BarChart3 className="h-3 w-3 mr-1" />
+                  {averageChunkSize.toLocaleString()}
+                </Badge>
+              </div>
+              {chunks.length > 0 && chunks[chunks.length - 1].length !== averageChunkSize && (
+                <div className="flex justify-between text-sm">
+                  <span>Последний чанк:</span>
+                  <Badge variant="secondary">
+                    {chunks[chunks.length - 1].length.toLocaleString()}
+                  </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Действия */}
@@ -269,7 +422,10 @@ export default function MassImportPage() {
                 disabled={isProcessing}
                 className="w-full"
               >
-                {isProcessing ? 'Экспорт...' : `Скачать ${chunks.length} файлов`}
+                {isProcessing && processingProgress?.type === 'export' 
+                  ? `Экспорт... (${processingProgress.current}/${processingProgress.total})` 
+                  : `Скачать ${chunks.length} файлов`
+                }
               </Button>
             </CardContent>
           </Card>
@@ -291,23 +447,37 @@ export default function MassImportPage() {
                 className="w-full"
                 variant="outline"
               >
-                {isProcessing ? 'Создание...' : `Создать ${chunks.length} баз`}
+                {isProcessing && processingProgress?.type === 'create'
+                  ? `Создание... (${processingProgress.current}/${processingProgress.total})`
+                  : `Создать ${chunks.length} баз`
+                }
               </Button>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Прогресс */}
-      {isProcessing && (
+      {/* Детальный прогресс */}
+      {isProcessing && processingProgress && (
         <Card>
           <CardContent className="pt-6">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span>Обработка...</span>
-                <span>Пожалуйста, подождите</span>
+                <span className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  {processingProgress.type === 'export' ? 'Экспорт файлов' : 'Создание баз'}
+                </span>
+                <span>
+                  {processingProgress.current} из {processingProgress.total}
+                </span>
               </div>
-              <Progress value={undefined} className="w-full" />
+              <Progress 
+                value={(processingProgress.current / processingProgress.total) * 100} 
+                className="w-full"
+              />
+              <div className="text-xs text-muted-foreground text-center">
+                {Math.round((processingProgress.current / processingProgress.total) * 100)}% завершено
+              </div>
             </div>
           </CardContent>
         </Card>
