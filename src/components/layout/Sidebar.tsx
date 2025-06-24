@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Send, Users, Settings, Bot } from 'lucide-react';
+import { Send, Users, Settings, Bot, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Campaigns', href: '/campaigns', icon: Send },
   { name: 'User Bases', href: '/user-bases', icon: Users },
+  { name: 'Tools', href: '/tools', icon: Wrench },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
