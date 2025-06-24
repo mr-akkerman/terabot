@@ -35,10 +35,26 @@ export class TelegramLimiter {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    // Отклоняем все оставшиеся в очереди запросы
+    while (this.queue.length > 0) {
+      const item = this.queue.shift();
+      if (item) {
+        item.reject(new Error('Campaign stopped'));
+      }
+    }
+  }
+
+  public getQueueLength(): number {
+    return this.queue.length;
   }
 
   public enqueue<T extends SendMessagePayload | SendPhotoPayload>(method: SendApiMethods, payload: T): Promise<unknown> {
     return new Promise((resolve, reject) => {
+      // Проверяем, запущен ли лимитер, если нет - сразу отклоняем
+      if (!this.isRunning) {
+        reject(new Error('Limiter is not running'));
+        return;
+      }
       this.queue.push({ method, payload, resolve, reject, retryCount: 0 });
     });
   }
@@ -55,13 +71,15 @@ export class TelegramLimiter {
       this.sendNextMessage();
     }
     
-    // Schedule the next check
-    this.timer = setTimeout(() => this.processQueue(), Math.max(0, delay - timeSinceLastRequest));
+    // Schedule the next check only if still running
+    if (this.isRunning) {
+      this.timer = setTimeout(() => this.processQueue(), Math.max(0, delay - timeSinceLastRequest));
+    }
   }
 
   private async sendNextMessage() {
     const item = this.queue.shift();
-    if (!item) return;
+    if (!item || !this.isRunning) return;
 
     try {
       let result;

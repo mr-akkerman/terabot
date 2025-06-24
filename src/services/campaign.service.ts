@@ -51,16 +51,25 @@ class CampaignManager {
   }
 
   async run(campaignId: string) {
+    console.log(`[Manager] Starting/resuming campaign ${campaignId}`);
     const runner = await this.getOrCreateRunner(campaignId);
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
-        await campaignStore.update({ ...campaign, status: runner.getStatus() === 'paused' ? 'running' : 'running' });
+        await campaignStore.update({ ...campaign, status: 'running' });
     }
     runner.start(); // resumes or starts
   }
   
   async restart(campaignId: string) {
-    const runner = await this.getOrCreateRunner(campaignId);
+    console.log(`[Manager] Restarting campaign ${campaignId}`);
+    
+    // Удаляем старый runner если есть
+    if (this.runners.has(campaignId)) {
+        const oldRunner = this.runners.get(campaignId)!;
+        oldRunner.stop();
+        this.runners.delete(campaignId);
+    }
+    
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
         // Clear previous recipient logs for this campaign
@@ -76,12 +85,24 @@ class CampaignManager {
         };
         await campaignStore.update({ ...campaign, status: 'running', progress: newProgress });
     }
+    
+    const runner = await this.getOrCreateRunner(campaignId);
     runner.restart();
   }
 
   async pause(campaignId: string) {
-    if (!this.runners.has(campaignId)) return;
-    const runner = await this.getOrCreateRunner(campaignId);
+    console.log(`[Manager] Pausing campaign ${campaignId}`);
+    if (!this.runners.has(campaignId)) {
+        console.log(`[Manager] No active runner for campaign ${campaignId}, just updating status`);
+        // Если нет активного runner, просто обновляем статус в БД
+        const campaign = await campaignStore.get(campaignId);
+        if (campaign) {
+            await campaignStore.update({ ...campaign, status: 'paused' });
+        }
+        return;
+    }
+    
+    const runner = this.runners.get(campaignId)!;
     runner.pause();
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
@@ -90,8 +111,18 @@ class CampaignManager {
   }
 
   async stop(campaignId: string) {
-    if (!this.runners.has(campaignId)) return;
-    const runner = await this.getOrCreateRunner(campaignId);
+    console.log(`[Manager] Stopping campaign ${campaignId}`);
+    if (!this.runners.has(campaignId)) {
+        console.log(`[Manager] No active runner for campaign ${campaignId}, just updating status`);
+        // Если нет активного runner, просто обновляем статус в БД
+        const campaign = await campaignStore.get(campaignId);
+        if (campaign) {
+            await campaignStore.update({ ...campaign, status: 'stopped' });
+        }
+        return;
+    }
+    
+    const runner = this.runners.get(campaignId)!;
     runner.stop();
     const campaign = await campaignStore.get(campaignId);
     if (campaign) {
