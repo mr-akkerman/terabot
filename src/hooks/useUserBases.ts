@@ -5,6 +5,7 @@ import { userBaseStore } from '@/lib/db';
 import type { UserBase } from '@/types';
 import { toast } from 'react-hot-toast';
 import { testApiSource } from '@/utils/api';
+import { ExportService } from '@/lib/export.service';
 
 const USER_BASES_QUERY_KEY = 'userBases';
 
@@ -82,6 +83,28 @@ export function useUserBases() {
     }
   });
 
+  // Функция экспорта пользователей базы
+  const exportUserBase = (userBase: UserBase) => {
+    try {
+      if (!userBase.userIds || userBase.userIds.length === 0) {
+        toast.error('База пользователей пуста или не загружена');
+        return;
+      }
+
+      const result = ExportService.exportUserBaseAsCommaList(
+        userBase.userIds,
+        userBase.name
+      );
+
+      if (result) {
+        toast.success(`Экспортировано ${result.count} пользователей в файл ${result.filename}`);
+      }
+    } catch (error) {
+      console.error('Error exporting user base:', error);
+      toast.error('Ошибка при экспорте базы пользователей');
+    }
+  };
+
   return {
     userBases: data,
     isLoading,
@@ -91,5 +114,6 @@ export function useUserBases() {
     deleteUserBase,
     checkUserBase,
     isChecking,
+    exportUserBase,
   };
 } 
