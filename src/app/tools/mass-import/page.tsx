@@ -46,31 +46,6 @@ export default function MassImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { addUserBase } = useUserBases();
 
-  // Обработка drag&drop
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    
-    const files = Array.from(e.dataTransfer.files);
-    const jsonFile = files.find(file => file.type === 'application/json');
-    
-    if (jsonFile) {
-      processFile(jsonFile);
-    } else {
-      setUploadError('Пожалуйста, перетащите JSON файл');
-    }
-  }, []);
-
   // Общая функция обработки файла
   const processFile = useCallback((file: File) => {
     if (file.type !== 'application/json') {
@@ -116,6 +91,31 @@ export default function MassImportPage() {
 
     reader.readAsText(file);
   }, []);
+
+  // Обработка drag&drop
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    const jsonFile = files.find(file => file.type === 'application/json');
+    
+    if (jsonFile) {
+      processFile(jsonFile);
+    } else {
+      setUploadError('Пожалуйста, перетащите JSON файл');
+    }
+  }, [processFile]);
 
   // Обработка загрузки файла
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +177,7 @@ export default function MassImportPage() {
       setIsProcessing(false);
       setProcessingProgress(null);
     }
-  }, [jsonData, createChunks]);
+  }, [jsonData, createChunks, baseName]);
 
   // Создание готовых баз рассылок с прогрессом
   const handleCreateUserBases = useCallback(async () => {
@@ -224,7 +224,7 @@ export default function MassImportPage() {
       setIsProcessing(false);
       setProcessingProgress(null);
     }
-  }, [jsonData, createChunks, addUserBase]);
+  }, [jsonData, createChunks, addUserBase, baseName]);
 
   const chunks = jsonData.length > 0 ? createChunks() : [];
   const averageChunkSize = chunks.length > 0 ? Math.floor(jsonData.length / chunks.length) : 0;
