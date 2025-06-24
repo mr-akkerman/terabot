@@ -169,7 +169,7 @@ export default function MassImportPage() {
       }
       
       toast.success(`Скачано ${chunks.length} файлов`);
-    } catch (error) {
+    } catch {
       toast.error('Ошибка при экспорте файлов');
     } finally {
       setIsProcessing(false);
@@ -216,7 +216,7 @@ export default function MassImportPage() {
       }
       
       toast.success(`Создано ${chunks.length} баз рассылок`);
-    } catch (error) {
+    } catch {
       toast.error('Ошибка при создании баз');
     } finally {
       setIsProcessing(false);

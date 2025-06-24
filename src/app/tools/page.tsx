@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Database, Download, Upload } from 'lucide-react';
+import { Database, Upload } from 'lucide-react';
 
 export default function ToolsPage() {
   const tools = [
