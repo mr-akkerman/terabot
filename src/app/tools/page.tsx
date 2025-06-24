@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Database, Upload } from 'lucide-react';
+import { Database, Upload, FileCheck } from 'lucide-react';
 
 export default function ToolsPage() {
   const tools = [
@@ -17,6 +17,19 @@ export default function ToolsPage() {
         'Разбивка на настраиваемые чанки',
         'Экспорт в готовые базы рассылок',
         'Скачивание файлов по чанкам'
+      ]
+    },
+    {
+      id: 'normalizer',
+      title: 'Нормализатор базы',
+      description: 'Объединение нескольких файлов с ID пользователей, удаление дубликатов и создание чистой базы',
+      icon: FileCheck,
+      href: '/tools/normalizer',
+      features: [
+        'Импорт JSON и TXT файлов',
+        'Автоматическое удаление дубликатов',
+        'Объединение баз в одну',
+        'Сохранение или скачивание результата'
       ]
     }
   ];
