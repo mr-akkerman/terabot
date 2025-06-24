@@ -37,6 +37,7 @@ interface ProcessingProgress {
 export default function MassImportPage() {
   const [jsonData, setJsonData] = useState<UserData[]>([]);
   const [chunkSize, setChunkSize] = useState(30000);
+  const [baseName, setBaseName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
@@ -146,9 +147,13 @@ export default function MassImportPage() {
         const blob = new Blob([userIds], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         
+        const fileName = baseName.trim() 
+          ? `${baseName.trim()}_chunk_${i + 1}_of_${chunks.length}.txt`
+          : `user_ids_chunk_${i + 1}_of_${chunks.length}.txt`;
+        
         const link = document.createElement('a');
         link.href = url;
-        link.download = `user_ids_chunk_${i + 1}_of_${chunks.length}.txt`;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -185,9 +190,13 @@ export default function MassImportPage() {
         const chunk = chunks[i];
         const userIds = chunk.map(item => item.user_id).join(',');
         
+        const userName = baseName.trim() 
+          ? `${baseName.trim()}_${i + 1}`
+          : `Импорт база ${i + 1} из ${chunks.length}`;
+        
         const userBase = {
           type: 'static' as const,
-          name: `Импорт база ${i + 1} из ${chunks.length}`,
+          name: userName,
           description: `Автоматически созданная база из ${chunk.length} пользователей`,
           rawUserIds: userIds,
           userIds: chunk.map(item => item.user_id),
@@ -343,20 +352,37 @@ export default function MassImportPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid w-full items-center gap-1.5">
-                <Label htmlFor="chunk-size">Размер чанка</Label>
-                <Input
-                  id="chunk-size"
-                  type="number"
-                  value={chunkSize}
-                  onChange={(e) => setChunkSize(Number(e.target.value))}
-                  min={1}
-                  max={100000}
-                  disabled={isProcessing}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Количество пользователей в одном чанке (по умолчанию 30,000)
-                </p>
+              <div className="space-y-4">
+                <div className="grid w-full items-center gap-1.5">
+                  <Label htmlFor="base-name">Базовое имя</Label>
+                  <Input
+                    id="base-name"
+                    type="text"
+                    value={baseName}
+                    onChange={(e) => setBaseName(e.target.value)}
+                    placeholder="Например: all_users"
+                    disabled={isProcessing}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Имя для создаваемых баз и файлов (например: all_users_1, all_users_2...)
+                  </p>
+                </div>
+                
+                <div className="grid w-full items-center gap-1.5">
+                  <Label htmlFor="chunk-size">Размер чанка</Label>
+                  <Input
+                    id="chunk-size"
+                    type="number"
+                    value={chunkSize}
+                    onChange={(e) => setChunkSize(Number(e.target.value))}
+                    min={1}
+                    max={100000}
+                    disabled={isProcessing}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Количество пользователей в одном чанке (по умолчанию 30,000)
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -412,9 +438,14 @@ export default function MassImportPage() {
                 <Download className="h-5 w-5" />
                 Экспорт в файлы
               </CardTitle>
-              <CardDescription>
-                Скачать {chunks.length} текстовых файлов с ID через запятую
-              </CardDescription>
+                          <CardDescription>
+              Скачать {chunks.length} текстовых файлов с ID через запятую
+              {baseName.trim() && (
+                <span className="block text-xs mt-1 text-primary">
+                  Файлы: {baseName.trim()}_chunk_1_of_{chunks.length}.txt, ...
+                </span>
+              )}
+            </CardDescription>
             </CardHeader>
             <CardContent>
               <Button 
@@ -436,9 +467,14 @@ export default function MassImportPage() {
                 <Database className="h-5 w-5" />
                 Создать базы рассылок
               </CardTitle>
-              <CardDescription>
-                Создать {chunks.length} готовых баз в системе
-              </CardDescription>
+                          <CardDescription>
+              Создать {chunks.length} готовых баз в системе
+              {baseName.trim() && (
+                <span className="block text-xs mt-1 text-primary">
+                  Базы: {baseName.trim()}_1, {baseName.trim()}_2, ...
+                </span>
+              )}
+            </CardDescription>
             </CardHeader>
             <CardContent>
               <Button 
