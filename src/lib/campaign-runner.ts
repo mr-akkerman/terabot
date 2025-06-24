@@ -24,6 +24,7 @@ export class CampaignRunner {
   private readonly api: TelegramAPI;
   private readonly limiter: TelegramLimiter;
   private userIdsToProcess: number[] = [];
+  private shouldStop = false; // Флаг для контроля выполнения промисов
 
   constructor(private readonly options: CampaignRunnerOptions) {
     this.api = new TelegramAPI(options.bot.token, { logger: console.log });
@@ -61,19 +62,26 @@ export class CampaignRunner {
     
     try {
         this.status = 'loading-users';
+        this.shouldStop = false; // Сбрасываем флаг остановки
         
         this.log('Loading user base...');
         const loader = new UserBaseLoader(this.options.userBase, (s, m) => this.log(`[UserLoader:${s}] ${m}`));
         const allUserIds = await loader.loadUserIds();
         
         this.log('Checking for existing progress in DB...');
-        const processedUsers = await campaignRecipientStore.getUnprocessed(this.options.campaign.id);
-        const processedUserIds = new Set(processedUsers.map(u => u.userId));
+        // Используем новый метод для получения только обработанных пользователей
+        const processedUserIds = await campaignRecipientStore.getProcessedUserIds(this.options.campaign.id);
+        const processedSet = new Set(processedUserIds);
         
-        this.userIdsToProcess = allUserIds.filter(id => !processedUserIds.has(id));
+        // Получаем статистику для обновления прогресса
+        const stats = await campaignRecipientStore.getCampaignStats(this.options.campaign.id);
+        
+        this.userIdsToProcess = allUserIds.filter(id => !processedSet.has(id));
         this.progress.totalUsers = allUserIds.length;
-        this.progress.sentCount = processedUsers.filter(u => u.status === 'success').length;
-        this.progress.failedCount = processedUsers.filter(u => u.status === 'failed').length;
+        this.progress.sentCount = stats.success;
+        this.progress.failedCount = stats.failed;
+
+        this.log(`Campaign stats: Total: ${allUserIds.length}, Processed: ${processedUserIds.length} (Success: ${stats.success}, Failed: ${stats.failed}), Pending: ${stats.pending}, To Process: ${this.userIdsToProcess.length}`);
 
         if (this.userIdsToProcess.length === 0) {
             this.log('No new users to process. Campaign is considered complete.');
@@ -82,9 +90,23 @@ export class CampaignRunner {
             return;
         }
 
-        this.log(`Found ${this.userIdsToProcess.length} users to process. Adding to DB queue...`);
-        const recipientsToQueue = this.userIdsToProcess.map(userId => ({ campaignId: this.options.campaign.id, userId, status: 'pending' as const }));
-        await campaignRecipientStore.bulkAdd(recipientsToQueue);
+        // Добавляем в БД только новых пользователей (тех, кого нет в processedSet и нет в pending)
+        const pendingRecipients = await campaignRecipientStore.getPendingRecipients(this.options.campaign.id);
+        const pendingSet = new Set(pendingRecipients.map(r => r.userId));
+        
+        const newUsersToQueue = this.userIdsToProcess.filter(id => !pendingSet.has(id));
+        
+        if (newUsersToQueue.length > 0) {
+            this.log(`Found ${newUsersToQueue.length} new users to add to DB queue...`);
+            const recipientsToQueue = newUsersToQueue.map(userId => ({ 
+                campaignId: this.options.campaign.id, 
+                userId, 
+                status: 'pending' as const 
+            }));
+            await campaignRecipientStore.bulkAdd(recipientsToQueue);
+        } else {
+            this.log('All users are already in the queue, resuming from existing progress...');
+        }
 
         this.log('Starting distribution...');
         this.status = 'running';
@@ -106,6 +128,7 @@ export class CampaignRunner {
     if (this.status === 'running') {
       this.log('Pausing campaign...');
       this.status = 'paused';
+      this.shouldStop = true; // Устанавливаем флаг для остановки новых запросов
       this.limiter.stop();
     }
   }
@@ -117,6 +140,7 @@ export class CampaignRunner {
     if (this.status === 'running' || this.status === 'paused') {
         this.log('Stopping campaign...');
         this.status = 'stopped';
+        this.shouldStop = true; // Устанавливаем флаг для остановки новых запросов
         this.limiter.stop();
         // Call onFinish immediately to finalize the state.
         this.options.onFinish(this.status, this.progress);
@@ -127,8 +151,8 @@ export class CampaignRunner {
     this.log(`Starting run loop with ${this.userIdsToProcess.length} users.`);
     
     for (let i = 0; i < this.userIdsToProcess.length; i += CHUNK_SIZE) {
-        if (this.status !== 'running') {
-            this.log(`Loop halted. Status: ${this.status}`);
+        if (this.status !== 'running' || this.shouldStop) {
+            this.log(`Loop halted. Status: ${this.status}, shouldStop: ${this.shouldStop}`);
             // For pause/stop, we just exit the loop. 
             // The state is handled by the pause() and stop() methods.
             return;
@@ -138,28 +162,53 @@ export class CampaignRunner {
         this.log(`Processing chunk of ${chunk.length} users (offset: ${i}).`);
 
         const promises = chunk.map(userId => {
+            // Проверяем флаг остановки перед каждым запросом
+            if (this.shouldStop) {
+                this.log(`Skipping user ${userId} due to stop flag`);
+                return Promise.resolve();
+            }
+
             const { method, payload } = this.prepareMessagePayload(userId);
             return this.limiter.enqueue(method, payload)
                 .then(() => {
+                    // Проверяем флаг остановки перед обновлением статуса
+                    if (this.shouldStop) {
+                        this.log(`Skipping status update for user ${userId} due to stop flag`);
+                        return;
+                    }
                     this.progress.sentCount++;
                     return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'success');
                 })
                 .catch((error) => {
+                    // Проверяем флаг остановки перед обновлением статуса
+                    if (this.shouldStop) {
+                        this.log(`Skipping error status update for user ${userId} due to stop flag`);
+                        return;
+                    }
                     this.progress.failedCount++;
                     const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
                     this.log(`Failed to send to ${userId}: ${errorMsg}`);
                     return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'failed', errorMsg);
                 })
                 .finally(() => {
-                    this.options.onProgress(this.progress);
+                    // Только обновляем прогресс, если не остановлены
+                    if (!this.shouldStop) {
+                        this.options.onProgress(this.progress);
+                    }
                 });
         });
 
         await Promise.allSettled(promises);
+        
+        // Дополнительная проверка после обработки чанка
+        if (this.status !== 'running' || this.shouldStop) {
+            this.log(`Stopping after chunk processing. Status: ${this.status}, shouldStop: ${this.shouldStop}`);
+            return;
+        }
     }
 
     // This code only runs if the loop completes without being interrupted.
-    if (this.status === 'running') {
+    if (this.status === 'running' && !this.shouldStop) {
         this.log('Campaign completed.');
         this.status = 'completed';
         this.limiter.stop();

@@ -191,13 +191,63 @@ export const campaignRecipientStore = {
         await tx.done;
     },
 
-    async getUnprocessed(campaignId: string): Promise<{ userId: number; status: 'pending' | 'success' | 'failed'; }[]> {
+    // Переименовываем старый метод getUnprocessed в getAllRecipients для ясности
+    async getAllRecipients(campaignId: string): Promise<{ userId: number; status: 'pending' | 'success' | 'failed'; }[]> {
         const db = await initDB();
         return db.getAllFromIndex(
             'campaignRecipients',
             'campaignId',
             IDBKeyRange.only(campaignId)
         );
+    },
+
+    // Новый метод для получения только ID обработанных пользователей (success или failed)
+    async getProcessedUserIds(campaignId: string): Promise<number[]> {
+        const db = await initDB();
+        const allRecipients = await db.getAllFromIndex(
+            'campaignRecipients',
+            'campaignId',
+            IDBKeyRange.only(campaignId)
+        );
+        return allRecipients
+            .filter(r => r.status === 'success' || r.status === 'failed')
+            .map(r => r.userId);
+    },
+
+    // Новый метод для получения только pending записей
+    async getPendingRecipients(campaignId: string): Promise<{ userId: number; status: 'pending'; }[]> {
+        const db = await initDB();
+        const allRecipients = await db.getAllFromIndex(
+            'campaignRecipients',
+            'campaignId',
+            IDBKeyRange.only(campaignId)
+        );
+        return allRecipients.filter(r => r.status === 'pending') as { userId: number; status: 'pending'; }[];
+    },
+
+    // Метод для получения статистики по кампании
+    async getCampaignStats(campaignId: string): Promise<{ total: number; success: number; failed: number; pending: number }> {
+        const db = await initDB();
+        const allRecipients = await db.getAllFromIndex(
+            'campaignRecipients',
+            'campaignId',
+            IDBKeyRange.only(campaignId)
+        );
+        
+        const stats = {
+            total: allRecipients.length,
+            success: 0,
+            failed: 0,
+            pending: 0
+        };
+
+        allRecipients.forEach(r => {
+            if (r.status === 'success') stats.success++;
+            else if (r.status === 'failed') stats.failed++;
+            else if (r.status === 'pending') stats.pending++;
+        });
+
+        return stats;
     },
     
     async getByCampaignId(campaignId: string): Promise<CampaignRecipient[]> {
