@@ -11,10 +11,8 @@ import {
   Upload, 
   Download, 
   Database, 
-  FileCheck, 
   AlertCircle,
   CheckCircle,
-  Users,
   Eye,
   BarChart3,
   X,
@@ -299,7 +297,7 @@ export default function NormalizerPage() {
       toast.error('Ошибка при скачивании файла');
       console.error(error);
     }
-  }, [normalizedData, baseName, uploadedFiles, totalOriginalIds, duplicatesRemoved]);
+  }, [normalizedData, baseName]);
 
   return (
     <div className="space-y-6">
@@ -534,7 +532,7 @@ export default function NormalizerPage() {
                    <Alert>
                      <CheckCircle className="h-4 w-4" />
                      <AlertDescription>
-                       ✅ База "<strong>{lastCreatedBase}</strong>" успешно создана и добавлена в список баз пользователей!
+                       ✅ База &quot;<strong>{lastCreatedBase}</strong>&quot; успешно создана и добавлена в список баз пользователей!
                      </AlertDescription>
                    </Alert>
                  )}
