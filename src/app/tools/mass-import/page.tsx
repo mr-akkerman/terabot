@@ -89,9 +89,11 @@ export default function MassImportPage() {
           throw new Error('JSON файл должен содержать массив объектов');
         }
 
-        const validData = data.filter((item: any) => 
-          item && typeof item.user_id === 'number' && item.user_id > 0
-        );
+        const validData = data.filter((item: unknown): item is UserData => {
+          if (!item || typeof item !== 'object') return false;
+          const obj = item as Record<string, unknown>;
+          return typeof obj.user_id === 'number' && obj.user_id > 0;
+        });
 
         if (validData.length === 0) {
           throw new Error('Не найдено валидных user_id в файле');
