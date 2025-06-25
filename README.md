@@ -285,7 +285,7 @@ MIT License - делай что хочешь, но помни о карме! �
 ### 🚀 **ПОПРОБУЙ TERABOT ПРЯМО СЕЙЧАС**
 
 [![Website](https://img.shields.io/badge/🌐_Try_Terabot-Live_Demo-blue?style=for-the-badge)](https://terabot.akkerman.io)
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/yourusername/terabot)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/mr-akkerman/terabot.git)
 
 ---
 
