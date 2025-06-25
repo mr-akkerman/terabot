@@ -1,4 +1,4 @@
-# DayToPost App Style Guide
+# Terabot App Style Guide
 
 ## Color Palette
 
