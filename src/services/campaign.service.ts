@@ -1,138 +1,198 @@
-import { CampaignRunner } from '@/lib/campaign-runner';
-import type { Campaign, CampaignProgress } from '@/types';
-import { campaignStore, userBaseStore, botStore, campaignRecipientStore } from '@/lib/db';
+import type { CampaignEngine, CampaignRunnerStatus, RecoveryResult } from '@/lib/campaign-engine';
+import type {
+  CampaignCommand,
+  CampaignCommandResult,
+  CampaignWorkerMessage,
+  CampaignWorkerRequest,
+} from '@/lib/campaign-worker-protocol';
 
+interface PendingRequest {
+  command: CampaignCommand;
+  campaignId: string;
+  resolve: (value: CampaignCommandResult) => void;
+  reject: (reason: Error) => void;
+}
+
+/**
+ * Фасад над движком рассылок.
+ *
+ * Основной режим: движок работает в dedicated Web Worker, поэтому рассылка
+ * не тормозит, когда вкладка в фоне или окно свёрнуто.
+ * Fallback: если воркер не поднялся, тот же движок работает в главном потоке.
+ *
+ * Пока идёт хотя бы одна рассылка, вкладка держит Web Lock (Chrome не замораживает
+ * такие вкладки в режиме Energy Saver) и предупреждает о закрытии через beforeunload.
+ */
 class CampaignManager {
-  private runners = new Map<string, CampaignRunner>();
+  private worker: Worker | null = null;
+  private workerReady = false;
+  private fallbackEnginePromise: Promise<CampaignEngine> | null = null;
+  private recoveryPromise: Promise<RecoveryResult> | null = null;
+  private pending = new Map<number, PendingRequest>();
+  private nextRequestId = 1;
 
-  private async getOrCreateRunner(campaignId: string): Promise<CampaignRunner> {
-    if (this.runners.has(campaignId)) {
-        return this.runners.get(campaignId)!;
+  private activeCampaignIds: string[] = [];
+  private releasePageLock: (() => void) | null = null;
+
+  private readonly handleBeforeUnload = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+    // Нужно для старых браузеров, которые смотрят только на returnValue
+    event.returnValue = '';
+  };
+
+  private readonly handleActiveChange = (campaignIds: string[]) => {
+    const wasActive = this.activeCampaignIds.length > 0;
+    this.activeCampaignIds = campaignIds;
+    const isActive = campaignIds.length > 0;
+    if (isActive === wasActive) return;
+
+    if (isActive) {
+      window.addEventListener('beforeunload', this.handleBeforeUnload);
+      this.acquirePageLock();
+    } else {
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
+      this.releasePageLock?.();
+      this.releasePageLock = null;
     }
+  };
 
-    console.log(`[Manager] Initializing runner for campaign ${campaignId}`);
+  private acquirePageLock() {
+    if (this.releasePageLock || !navigator.locks) return;
+    const name = `terabot:active-tab:${Date.now()}-${Math.random()}`;
+    navigator.locks
+      .request(name, () => new Promise<void>((release) => { this.releasePageLock = release; }))
+      .catch((error) => console.warn('[CampaignService] Failed to acquire page lock:', error));
+  }
 
-    const campaign = await campaignStore.get(campaignId);
-    if (!campaign) throw new Error('Campaign not found');
-    
-    const userBase = await userBaseStore.get(campaign.userBaseId);
-    if (!userBase) throw new Error('User base not found for campaign');
-
-    const bot = await botStore.get(campaign.botId);
-    if (!bot) throw new Error('Bot not found for campaign');
-    
-    const onProgress = (progress: CampaignProgress) => {
-      // We only update the progress part of the campaign in the DB
-      // The status is handled by the control methods (run, pause, etc.)
-      campaignStore.get(campaignId).then(c => {
-        if (c) campaignStore.update({ ...c, progress });
+  // Движок грузится лениво: в штатном режиме он нужен только внутри воркера.
+  private getFallbackEngine(): Promise<CampaignEngine> {
+    if (!this.fallbackEnginePromise) {
+      console.warn('[CampaignService] Web Worker unavailable, running campaigns on the main thread.');
+      this.fallbackEnginePromise = import('@/lib/campaign-engine').then(({ CampaignEngine }) => {
+        return new CampaignEngine({ onActiveChange: this.handleActiveChange });
       });
-    };
-
-    const onFinish = (status: Campaign['status'], finalProgress: CampaignProgress) => {
-        campaignStore.get(campaignId).then(c => {
-            if (c) campaignStore.update({ ...c, progress: finalProgress, status });
-        });
-        this.runners.delete(campaignId);
-        console.log(`[Manager] Finished campaign ${campaignId} with status: ${status}`);
-    };
-
-    const onError = (error: Error, finalProgress: CampaignProgress) => {
-        campaignStore.get(campaignId).then(c => {
-            if (c) campaignStore.update({ ...c, progress: finalProgress, status: 'failed' });
-        });
-        this.runners.delete(campaignId);
-        console.error(`[Manager] Error in campaign ${campaignId}:`, error);
-    };
-
-    const runner = new CampaignRunner({ campaign, userBase, bot, onProgress, onFinish, onError });
-    this.runners.set(campaignId, runner);
-    return runner;
+    }
+    return this.fallbackEnginePromise;
   }
 
-  async run(campaignId: string) {
-    console.log(`[Manager] Starting/resuming campaign ${campaignId}`);
-    const runner = await this.getOrCreateRunner(campaignId);
-    const campaign = await campaignStore.get(campaignId);
-    if (campaign) {
-        await campaignStore.update({ ...campaign, status: 'running' });
+  private switchToFallback(reason: unknown) {
+    console.error('[CampaignService] Campaign worker failed to start:', reason);
+    this.worker?.terminate();
+    this.worker = null;
+    // Воркер не успел выполнить ни одной команды — переигрываем их в главном потоке.
+    const requests = [...this.pending.values()];
+    this.pending.clear();
+    for (const request of requests) {
+      this.executeOnFallback(request.command, request.campaignId).then(request.resolve, request.reject);
     }
-    runner.start(); // resumes or starts
-  }
-  
-  async restart(campaignId: string) {
-    console.log(`[Manager] Restarting campaign ${campaignId}`);
-    
-    // Удаляем старый runner если есть
-    if (this.runners.has(campaignId)) {
-        const oldRunner = this.runners.get(campaignId)!;
-        oldRunner.stop();
-        this.runners.delete(campaignId);
-    }
-    
-    const campaign = await campaignStore.get(campaignId);
-    if (campaign) {
-        // Clear previous recipient logs for this campaign
-        await campaignRecipientStore.clearForCampaign(campaignId);
-
-        // Explicitly reset the progress in the database
-        const newProgress: CampaignProgress = {
-            campaignId: campaign.id,
-            totalUsers: 0,
-            sentCount: 0,
-            failedCount: 0,
-            results: [],
-        };
-        await campaignStore.update({ ...campaign, status: 'running', progress: newProgress });
-    }
-    
-    const runner = await this.getOrCreateRunner(campaignId);
-    runner.restart();
   }
 
-  async pause(campaignId: string) {
-    console.log(`[Manager] Pausing campaign ${campaignId}`);
-    if (!this.runners.has(campaignId)) {
-        console.log(`[Manager] No active runner for campaign ${campaignId}, just updating status`);
-        // Если нет активного runner, просто обновляем статус в БД
-        const campaign = await campaignStore.get(campaignId);
-        if (campaign) {
-            await campaignStore.update({ ...campaign, status: 'paused' });
+  private getWorker(): Worker | null {
+    if (this.worker) return this.worker;
+    if (this.fallbackEnginePromise || typeof Worker === 'undefined') return null;
+
+    try {
+      this.worker = new Worker(new URL('../workers/campaign.worker.ts', import.meta.url), {
+        type: 'module',
+        name: 'terabot-campaigns',
+      });
+    } catch (error) {
+      this.switchToFallback(error);
+      return null;
+    }
+
+    this.worker.onmessage = (event: MessageEvent<CampaignWorkerMessage>) => {
+      const message = event.data;
+      switch (message.type) {
+        case 'ready':
+          this.workerReady = true;
+          break;
+        case 'active':
+          this.handleActiveChange(message.campaignIds);
+          break;
+        case 'response': {
+          const request = this.pending.get(message.requestId);
+          if (!request) return;
+          this.pending.delete(message.requestId);
+          if (message.ok) request.resolve(message.result);
+          else request.reject(new Error(message.error));
+          break;
         }
-        return;
-    }
-    
-    const runner = this.runners.get(campaignId)!;
-    runner.pause();
-    const campaign = await campaignStore.get(campaignId);
-    if (campaign) {
-        await campaignStore.update({ ...campaign, status: 'paused' });
+      }
+    };
+
+    this.worker.onerror = (event) => {
+      if (!this.workerReady) {
+        event.preventDefault();
+        this.switchToFallback(event.message || event);
+      } else {
+        console.error('[CampaignService] Uncaught error in campaign worker:', event.message);
+      }
+    };
+
+    return this.worker;
+  }
+
+  private async executeOnFallback(
+    command: CampaignCommand,
+    campaignId: string,
+  ): Promise<CampaignCommandResult> {
+    const engine = await this.getFallbackEngine();
+    switch (command) {
+      case 'run': await engine.run(campaignId); return;
+      case 'pause': await engine.pause(campaignId); return;
+      case 'stop': await engine.stop(campaignId); return;
+      case 'restart': await engine.restart(campaignId); return;
+      case 'getStatus': return engine.getStatus(campaignId);
+      case 'recover': return engine.recoverInterrupted();
     }
   }
 
-  async stop(campaignId: string) {
-    console.log(`[Manager] Stopping campaign ${campaignId}`);
-    if (!this.runners.has(campaignId)) {
-        console.log(`[Manager] No active runner for campaign ${campaignId}, just updating status`);
-        // Если нет активного runner, просто обновляем статус в БД
-        const campaign = await campaignStore.get(campaignId);
-        if (campaign) {
-            await campaignStore.update({ ...campaign, status: 'stopped' });
-        }
-        return;
-    }
-    
-    const runner = this.runners.get(campaignId)!;
-    runner.stop();
-    const campaign = await campaignStore.get(campaignId);
-    if (campaign) {
-        await campaignStore.update({ ...campaign, status: 'stopped' });
-    }
+  private execute(command: CampaignCommand, campaignId: string): Promise<CampaignCommandResult> {
+    const worker = this.getWorker();
+    if (!worker) return this.executeOnFallback(command, campaignId);
+
+    return new Promise((resolve, reject) => {
+      const requestId = this.nextRequestId++;
+      this.pending.set(requestId, { command, campaignId, resolve, reject });
+      const request: CampaignWorkerRequest = { requestId, command, campaignId };
+      worker.postMessage(request);
+    });
   }
 
-  getStatus(campaignId: string): CampaignRunner['status'] | null {
-    return this.runners.get(campaignId)?.getStatus() || null;
+  async run(campaignId: string): Promise<void> {
+    await this.execute('run', campaignId);
+  }
+
+  async restart(campaignId: string): Promise<void> {
+    await this.execute('restart', campaignId);
+  }
+
+  async pause(campaignId: string): Promise<void> {
+    await this.execute('pause', campaignId);
+  }
+
+  async stop(campaignId: string): Promise<void> {
+    await this.execute('stop', campaignId);
+  }
+
+  async getStatus(campaignId: string): Promise<CampaignRunnerStatus | null> {
+    return ((await this.execute('getStatus', campaignId)) as CampaignRunnerStatus | null) ?? null;
+  }
+
+  /**
+   * Перезапускает кампании, прерванные перезагрузкой страницы. Вызывается один раз
+   * при старте приложения; повторные вызовы возвращают тот же результат.
+   */
+  recoverInterrupted(): Promise<RecoveryResult> {
+    this.recoveryPromise ??= this.execute('recover', '') as Promise<RecoveryResult>;
+    return this.recoveryPromise;
+  }
+
+  /** Работает ли движок в фоновом потоке (false — fallback в главном потоке). */
+  isRunningInWorker(): boolean {
+    return this.getWorker() !== null;
   }
 }
 
-export const CampaignService = new CampaignManager(); 
+export const CampaignService = new CampaignManager();

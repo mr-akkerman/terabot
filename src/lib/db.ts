@@ -93,6 +93,19 @@ export const campaignStore = {
     const db = await initDB();
     return db.put('campaigns', campaign);
   },
+  /**
+   * Атомарно обновляет часть полей кампании (чтение и запись в одной транзакции),
+   * чтобы параллельные апдейты прогресса и статуса не затирали друг друга.
+   */
+  async patch(id: string, changes: Partial<Omit<Campaign, 'id'>>): Promise<void> {
+    const db = await initDB();
+    const tx = db.transaction('campaigns', 'readwrite');
+    const campaign = await tx.store.get(id);
+    if (campaign) {
+      await tx.store.put({ ...campaign, ...changes });
+    }
+    await tx.done;
+  },
   async delete(id: string): Promise<void> {
     const db = await initDB();
     return db.delete('campaigns', id);
