@@ -1,6 +1,6 @@
 import type { Campaign, UserBase, Bot, CampaignProgress } from '@/types';
 import { TelegramAPI, TelegramApiError } from '@/utils/telegram';
-import { TelegramLimiter } from './telegram-limiter';
+import { TelegramLimiter, LimiterStoppedError } from './telegram-limiter';
 import { UserBaseLoader } from './user-base-loader';
 import { campaignRecipientStore } from './db';
 
@@ -169,22 +169,16 @@ export class CampaignRunner {
             }
 
             const { method, payload } = this.prepareMessagePayload(userId);
+            // Результат пишем всегда, когда запрос реально дошёл до Telegram — даже если
+            // кампанию уже поставили на паузу, иначе при возобновлении человек получит дубль.
+            // В pending остаются только те, кого лимитер не успел отправить (LimiterStoppedError).
             return this.limiter.enqueue(method, payload)
                 .then(() => {
-                    // Проверяем флаг остановки перед обновлением статуса
-                    if (this.shouldStop) {
-                        this.log(`Skipping status update for user ${userId} due to stop flag`);
-                        return;
-                    }
                     this.progress.sentCount++;
                     return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'success');
                 })
                 .catch((error) => {
-                    // Проверяем флаг остановки перед обновлением статуса
-                    if (this.shouldStop) {
-                        this.log(`Skipping error status update for user ${userId} due to stop flag`);
-                        return;
-                    }
+                    if (error instanceof LimiterStoppedError) return;
                     this.progress.failedCount++;
                     const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
                     this.log(`Failed to send to ${userId}: ${errorMsg}`);
