@@ -21,6 +21,7 @@ ctx.onmessage = async (event: MessageEvent<CampaignWorkerRequest>) => {
       case 'stop': await engine.stop(campaignId); break;
       case 'restart': await engine.restart(campaignId); break;
       case 'getStatus': result = engine.getStatus(campaignId); break;
+      case 'recover': result = await engine.recoverInterrupted(); break;
     }
     post({ type: 'response', requestId, ok: true, result });
   } catch (error) {

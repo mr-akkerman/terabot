@@ -7,6 +7,24 @@ const PROGRESS_FLUSH_MS = 500;
 
 export type CampaignRunnerStatus = ReturnType<CampaignRunner['getStatus']>;
 
+/** Кампания уже выполняется в другой вкладке (её Web Lock занят). */
+export class CampaignLockedError extends Error {
+  constructor() {
+    super('Эта кампания уже запущена в другой вкладке');
+    this.name = 'CampaignLockedError';
+  }
+}
+
+export interface RecoveryResult {
+  /** Кампании, которые были прерваны перезагрузкой и снова запущены. */
+  resumed: { id: string; name: string }[];
+  /** Кампании, которые продолжить не удалось: переведены в paused. */
+  failed: { id: string; name: string; error: string }[];
+}
+
+// Статусы, в которых кампания должна активно рассылаться
+const ACTIVE_STATUSES: ReadonlySet<string> = new Set(['running', 'loading-users']);
+
 export interface CampaignEngineEvents {
   /** Вызывается при каждом изменении набора кампаний, которые сейчас реально рассылаются. */
   onActiveChange?: (activeCampaignIds: string[]) => void;
@@ -42,7 +60,7 @@ export class CampaignEngine {
       navigator.locks
         .request(`terabot:campaign:${campaignId}`, { ifAvailable: true }, (lock) => {
           if (!lock) {
-            reject(new Error('Эта кампания уже запущена в другой вкладке'));
+            reject(new CampaignLockedError());
             return;
           }
           // Держим лок, пока не вызовут release.
@@ -205,6 +223,32 @@ export class CampaignEngine {
     }
     await campaignStore.patch(campaignId, { status: 'stopped' });
     this.releaseCampaignLock(campaignId);
+  }
+
+  /**
+   * Подхватывает кампании, которые остались в статусе running после перезагрузки
+   * или закрытия вкладки: в БД они «идут», но никто их не рассылает.
+   * Кампании, которые сейчас крутит другая вкладка, пропускаются (их лок занят).
+   */
+  async recoverInterrupted(): Promise<RecoveryResult> {
+    const result: RecoveryResult = { resumed: [], failed: [] };
+    const campaigns = await campaignStore.getAll();
+
+    for (const campaign of campaigns) {
+      if (!ACTIVE_STATUSES.has(campaign.status) || this.runners.has(campaign.id)) continue;
+      try {
+        await this.run(campaign.id);
+        result.resumed.push({ id: campaign.id, name: campaign.name });
+        console.log(`[Engine] Recovered interrupted campaign ${campaign.id}`);
+      } catch (error) {
+        if (error instanceof CampaignLockedError) continue;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[Engine] Failed to recover campaign ${campaign.id}:`, error);
+        await campaignStore.patch(campaign.id, { status: 'paused' });
+        result.failed.push({ id: campaign.id, name: campaign.name, error: message });
+      }
+    }
+    return result;
   }
 
   getStatus(campaignId: string): CampaignRunnerStatus | null {

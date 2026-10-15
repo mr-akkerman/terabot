@@ -1,6 +1,7 @@
-import type { CampaignEngine, CampaignRunnerStatus } from '@/lib/campaign-engine';
+import type { CampaignEngine, CampaignRunnerStatus, RecoveryResult } from '@/lib/campaign-engine';
 import type {
   CampaignCommand,
+  CampaignCommandResult,
   CampaignWorkerMessage,
   CampaignWorkerRequest,
 } from '@/lib/campaign-worker-protocol';
@@ -8,7 +9,7 @@ import type {
 interface PendingRequest {
   command: CampaignCommand;
   campaignId: string;
-  resolve: (value: CampaignRunnerStatus | null | undefined) => void;
+  resolve: (value: CampaignCommandResult) => void;
   reject: (reason: Error) => void;
 }
 
@@ -26,6 +27,7 @@ class CampaignManager {
   private worker: Worker | null = null;
   private workerReady = false;
   private fallbackEnginePromise: Promise<CampaignEngine> | null = null;
+  private recoveryPromise: Promise<RecoveryResult> | null = null;
   private pending = new Map<number, PendingRequest>();
   private nextRequestId = 1;
 
@@ -134,7 +136,7 @@ class CampaignManager {
   private async executeOnFallback(
     command: CampaignCommand,
     campaignId: string,
-  ): Promise<CampaignRunnerStatus | null | undefined> {
+  ): Promise<CampaignCommandResult> {
     const engine = await this.getFallbackEngine();
     switch (command) {
       case 'run': await engine.run(campaignId); return;
@@ -142,10 +144,11 @@ class CampaignManager {
       case 'stop': await engine.stop(campaignId); return;
       case 'restart': await engine.restart(campaignId); return;
       case 'getStatus': return engine.getStatus(campaignId);
+      case 'recover': return engine.recoverInterrupted();
     }
   }
 
-  private execute(command: CampaignCommand, campaignId: string): Promise<CampaignRunnerStatus | null | undefined> {
+  private execute(command: CampaignCommand, campaignId: string): Promise<CampaignCommandResult> {
     const worker = this.getWorker();
     if (!worker) return this.executeOnFallback(command, campaignId);
 
@@ -174,7 +177,16 @@ class CampaignManager {
   }
 
   async getStatus(campaignId: string): Promise<CampaignRunnerStatus | null> {
-    return (await this.execute('getStatus', campaignId)) ?? null;
+    return ((await this.execute('getStatus', campaignId)) as CampaignRunnerStatus | null) ?? null;
+  }
+
+  /**
+   * Перезапускает кампании, прерванные перезагрузкой страницы. Вызывается один раз
+   * при старте приложения; повторные вызовы возвращают тот же результат.
+   */
+  recoverInterrupted(): Promise<RecoveryResult> {
+    this.recoveryPromise ??= this.execute('recover', '') as Promise<RecoveryResult>;
+    return this.recoveryPromise;
   }
 
   /** Работает ли движок в фоновом потоке (false — fallback в главном потоке). */
