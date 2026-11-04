@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UserBase } from '@/types';
 
@@ -34,6 +35,26 @@ const statusIconMap = {
 }
 
 export const getUserBasesColumns = ({ onAction }: GetColumnsOptions): ColumnDef<UserBase>[] => [
+  {
+    id: 'select',
+    header: ({ table }) => (
+      <Checkbox
+        aria-label="Select all user bases"
+        checked={table.getIsAllRowsSelected()}
+        indeterminate={table.getIsSomeRowsSelected()}
+        onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
+      />
+    ),
+    cell: ({ row }) => (
+      <Checkbox
+        aria-label={`Select ${row.original.name}`}
+        checked={row.getIsSelected()}
+        onCheckedChange={(checked) => row.toggleSelected(checked)}
+      />
+    ),
+    enableSorting: false,
+    enableHiding: false,
+  },
   {
     accessorKey: 'name',
     header: ({ column }) => {
