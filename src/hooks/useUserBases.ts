@@ -50,6 +50,18 @@ export function useUserBases() {
     },
   });
 
+  // Массовое удаление
+  const { mutate: deleteUserBases, isPending: isDeletingMany } = useMutation<void, Error, string[]>({
+    mutationFn: (ids) => userBaseStore.deleteMany(ids),
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: [USER_BASES_QUERY_KEY] });
+      toast.success(`Deleted ${ids.length} user base${ids.length === 1 ? '' : 's'}`);
+    },
+    onError: (error) => {
+      toast.error(`Failed to delete user bases: ${error.message}`);
+    },
+  });
+
   const { mutate: checkUserBase, isPending: isChecking } = useMutation<void, Error, string>({
     mutationFn: async (id: string) => {
       const userBase = await userBaseStore.get(id);
@@ -112,6 +124,8 @@ export function useUserBases() {
     addUserBase,
     updateUserBase,
     deleteUserBase,
+    deleteUserBases,
+    isDeletingMany,
     checkUserBase,
     isChecking,
     exportUserBase,

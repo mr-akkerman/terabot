@@ -11,6 +11,8 @@ import {
   SortingState,
   ColumnFiltersState,
   VisibilityState,
+  RowSelectionState,
+  OnChangeFn,
 } from '@tanstack/react-table';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -30,6 +32,11 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   toolbar?: React.ReactNode;
   onRowClick?: (row: TData) => void;
+  /** Выбор строк: передайте состояние и обработчик, чтобы включить его. */
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
+  /** Стабильный ID строки — нужен, чтобы выбор не съезжал при изменении данных. */
+  getRowId?: (row: TData) => string;
 }
 
 export function DataTable<TData, TValue>({
@@ -37,6 +44,9 @@ export function DataTable<TData, TValue>({
   data,
   toolbar,
   onRowClick,
+  rowSelection,
+  onRowSelectionChange,
+  getRowId,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -52,10 +62,14 @@ export function DataTable<TData, TValue>({
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
+    getRowId,
+    enableRowSelection: !!onRowSelectionChange,
+    onRowSelectionChange,
     state: {
       sorting,
       columnFilters,
       columnVisibility,
+      ...(rowSelection ? { rowSelection } : {}),
     },
   });
 

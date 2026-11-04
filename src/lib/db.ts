@@ -134,6 +134,13 @@ export const userBaseStore = {
     const db = await initDB();
     return db.delete('userBases', id);
   },
+  /** Удаляет несколько баз одной транзакцией: либо все, либо ни одной. */
+  async deleteMany(ids: string[]): Promise<void> {
+    const db = await initDB();
+    const tx = db.transaction('userBases', 'readwrite');
+    await Promise.all(ids.map((id) => tx.store.delete(id)));
+    await tx.done;
+  },
 };
 
 // 5. CRUD операции для Bot
