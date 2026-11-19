@@ -148,6 +148,55 @@ test.describe('Creating a user base', () => {
     expect(bases[2].userIds.at(-1)).toBe(5000);
   });
 
+  test('merges several files into one base and splits the merged list', async ({ page }) => {
+    await openApp(page, '/user-bases');
+    await page.getByRole('button', { name: 'Create User Base' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('MERGED');
+    const file = (name: string, ids: number[]) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(ids.join('\n')) });
+    // b.txt repeats 100 IDs of a.txt; c.txt uses commas
+    await dialog.locator('#userIds-file-upload').setInputFiles([
+      file('a.txt', range(1, 1500)),
+      file('b.txt', range(1401, 2500)),
+      { name: 'c.txt', mimeType: 'text/plain', buffer: Buffer.from(range(2501, 3000).join(', ')) },
+    ]);
+
+    await expect(dialog.getByText('Found 3,000 valid IDs')).toBeVisible();
+    const summary = dialog.getByTestId('upload-summary');
+    await expect(summary).toContainText('Merged 3 files · 100 duplicates removed');
+    await expect(summary.getByRole('listitem')).toHaveText(['a.txt1,500 IDs', 'b.txt1,100 IDs', 'c.txt500 IDs']);
+
+    await dialog.getByRole('switch', { name: 'Split into parts' }).click();
+    await dialog.getByLabel('Rows per part').fill('1200');
+    await dialog.getByRole('button', { name: 'Create 3 bases' }).click();
+    await expect(page.getByText('Created 3 user bases')).toBeVisible();
+
+    const bases = (await readStore<StoredBase>(page, 'userBases')).sort((a, b) => a.partIndex! - b.partIndex!);
+    // Parts follow the merged order and ignore file boundaries
+    expect(bases.map((b) => [b.name, b.userCount, b.userIds[0], b.userIds.at(-1)])).toEqual([
+      ['MERGED_1', 1200, 1, 1200],
+      ['MERGED_2', 1200, 1201, 2400],
+      ['MERGED_3', 600, 2401, 3000],
+    ]);
+  });
+
+  test('several files without splitting become one base', async ({ page }) => {
+    await openApp(page, '/user-bases');
+    await page.getByRole('button', { name: 'Create User Base' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('One base');
+    await dialog.locator('#userIds-file-upload').setInputFiles([
+      { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('1\n2\n3') },
+      { name: 'b.txt', mimeType: 'text/plain', buffer: Buffer.from('3\n4') },
+    ]);
+    await expect(dialog.getByTestId('upload-summary')).toContainText('Merged 2 files · 1 duplicate removed');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByRole('cell', { name: 'One base', exact: true })).toBeVisible();
+    const bases = await readStore<StoredBase>(page, 'userBases');
+    expect(bases.map((b) => [b.name, b.userIds])).toEqual([['One base', [1, 2, 3, 4]]]);
+  });
+
   test('does not split when everything fits into one part', async ({ page }) => {
     await openApp(page, '/user-bases');
     await page.getByRole('button', { name: 'Create User Base' }).click();
