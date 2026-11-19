@@ -38,6 +38,7 @@ import type { UserBase } from '@/types';
 import { cn } from '@/lib/utils';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
 import { useCallback, useMemo, useState } from 'react';
+import { toast } from 'react-hot-toast';
 import { Switch } from '@/components/ui/switch';
 import { parseUserIds, partName, splitIntoParts } from '@/lib/user-ids';
 
@@ -67,6 +68,8 @@ type UserBaseFormValues = z.infer<typeof formSchema>;
 const DEFAULT_PART_SIZE = 10000;
 // Guards against a typo in the part size (e.g. 1 row per part for a 100k base)
 const MAX_PARTS = 500;
+const MAX_FILE_SIZE_MB = 5;
+const MAX_TOTAL_SIZE_MB = 25;
 const formatCount = (n: number) => n.toLocaleString('en-US');
 
 interface UserBaseDialogProps {
@@ -80,6 +83,8 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   // Splitting is only available when creating a new static base
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [partSizeInput, setPartSizeInput] = useState(String(DEFAULT_PART_SIZE));
+  // What the last upload consisted of; cleared as soon as the list is edited by hand
+  const [uploadSummary, setUploadSummary] = useState<{ files: { name: string; count: number }[]; duplicates: number } | null>(null);
   const apiTester = useApiTester();
 
   // Type Guards для безопасной проверки типов
@@ -128,45 +133,49 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   const splitBlocked = canSplit && splitEnabled && (!isPartSizeValid || tooManyParts);
 
   // Функция для загрузки файла
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Проверяем тип файла
-    if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
-      alert('Пожалуйста, выберите текстовый файл (.txt)');
-      return;
-    }
-
-    // Проверяем размер файла (максимум 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Файл слишком большой. Максимальный размер: 5MB');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      if (content) {
-        // Устанавливаем содержимое файла в textarea
-        form.setValue('rawUserIds', content);
-        
-        form.clearErrors('rawUserIds');
-        // The number of IDs found is shown under the field, no separate popup needed
-        if (parseUserIds(content).length === 0) {
-          alert('В файле не найдено валидных ID пользователей');
-        }
-      }
-    };
-    
-    reader.onerror = () => {
-      alert('Ошибка при чтении файла');
-    };
-    
-    reader.readAsText(file);
-    
-    // Очищаем input для возможности повторной загрузки того же файла
+  // Reads every selected file and merges them into one de-duplicated ID list.
+  // Splitting (if enabled) then works on the merged list, so parts ignore file boundaries.
+  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    // Reset the input so the same files can be picked again
     event.target.value = '';
+    if (files.length === 0) return;
+
+    const notText = files.find((file) => !file.name.endsWith('.txt') && file.type !== 'text/plain');
+    if (notText) {
+      toast.error(`"${notText.name}" is not a text file (.txt)`);
+      return;
+    }
+    const tooBig = files.find((file) => file.size > MAX_FILE_SIZE_MB * 1024 * 1024);
+    if (tooBig) {
+      toast.error(`"${tooBig.name}" is too large (max ${MAX_FILE_SIZE_MB} MB per file)`);
+      return;
+    }
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > MAX_TOTAL_SIZE_MB * 1024 * 1024) {
+      toast.error(`Selected files are too large together (max ${MAX_TOTAL_SIZE_MB} MB in total)`);
+      return;
+    }
+
+    try {
+      const contents = await Promise.all(files.map((file) => file.text()));
+      const perFile = files.map((file, index) => ({ name: file.name, count: parseUserIds(contents[index]).length }));
+      const merged = parseUserIds(contents.join('\n'));
+      if (merged.length === 0) {
+        toast.error(files.length === 1 ? 'No valid user IDs found in the file' : 'No valid user IDs found in the selected files');
+        return;
+      }
+
+      form.setValue('rawUserIds', merged.join('\n'));
+      form.clearErrors('rawUserIds');
+      setUploadSummary({
+        files: perFile,
+        duplicates: perFile.reduce((sum, file) => sum + file.count, 0) - merged.length,
+      });
+    } catch (error) {
+      console.error('Failed to read user ID files:', error);
+      toast.error('Failed to read the selected files');
+    }
   }, [form]);
 
   const onSubmit = async (data: UserBaseFormValues) => {
@@ -333,6 +342,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
                       <input
                         type="file"
                         accept=".txt,text/plain"
+                        multiple
                         onChange={handleFileUpload}
                         className="hidden"
                         id="userIds-file-upload"
@@ -344,12 +354,12 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
                         onClick={() => document.getElementById('userIds-file-upload')?.click()}
                       >
                         <Upload className="mr-2 h-4 w-4" />
-                        Upload File
+                        Upload Files
                       </Button>
                     </div>
                   </div>
                   <FormControl>
-                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line. Or use the Upload File button above." className="h-44 resize-none overflow-y-auto font-mono [field-sizing:fixed]" {...field} />
+                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line. Or upload one or several .txt files — they will be merged." className="h-44 resize-none overflow-y-auto font-mono [field-sizing:fixed]" {...field} onChange={(e) => { setUploadSummary(null); field.onChange(e); }} />
                   </FormControl>
                   <FormDescription>
                     {parsedIds.length === 0 ? 'Preview: ...' : (
@@ -361,6 +371,24 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
                       </span>
                     )}
                   </FormDescription>
+                  {uploadSummary && (
+                    <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground" data-testid="upload-summary">
+                      <p className="font-medium text-foreground">
+                        {uploadSummary.files.length === 1
+                          ? 'Loaded 1 file'
+                          : `Merged ${uploadSummary.files.length} files`}
+                        {uploadSummary.duplicates > 0 && ` · ${formatCount(uploadSummary.duplicates)} duplicate${uploadSummary.duplicates === 1 ? '' : 's'} removed`}
+                      </p>
+                      <ul className="max-h-24 overflow-y-auto">
+                        {uploadSummary.files.map((file, index) => (
+                          <li key={`${file.name}-${index}`} className="flex justify-between gap-4">
+                            <span className="truncate">{file.name}</span>
+                            <span className="shrink-0">{formatCount(file.count)} IDs</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <FormMessage />
                   </FormItem>
               )}
