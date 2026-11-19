@@ -1,4 +1,5 @@
 import type { UserBase, ApiUserBase } from '@/types';
+import { parseUserIds } from './user-ids';
 
 // Простой кеш в памяти, чтобы избежать повторных API-запросов в рамках сессии
 const apiCache = new Map<string, { data: number[], timestamp: number }>();
@@ -23,7 +24,7 @@ export class UserBaseLoader {
 
       if (this.userBase.type === 'static') {
         this.onProgress('loading', 'Parsing static user list...');
-        userIds = this.parseStaticIds(this.userBase.rawUserIds);
+        userIds = parseUserIds(this.userBase.rawUserIds);
       } else if (this.userBase.type === 'api') {
         this.onProgress('loading', `Fetching from API: ${this.userBase.apiUrl}`);
         userIds = await this.fetchApiIds(this.userBase);
@@ -38,20 +39,6 @@ export class UserBaseLoader {
     }
   }
 
-  private parseStaticIds(rawIds: string): number[] {
-    if (!rawIds) return [];
-    
-    const ids = rawIds
-      .split(/[\s,;\n]+/)
-      .map(id => id.trim())
-      .filter(id => id)
-      .map(Number)
-      .filter(id => !isNaN(id) && Number.isInteger(id) && id > 0);
-      
-    // Убираем дубликаты
-    return [...new Set(ids)];
-  }
-  
   private async fetchApiIds(apiInfo: ApiUserBase): Promise<number[]> {
     const cacheKey = `${apiInfo.apiUrl}-${apiInfo.apiMethod}`;
     const cached = apiCache.get(cacheKey);

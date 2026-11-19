@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
 import * as z from 'zod';
-import { PlusCircle, Trash2, Upload } from 'lucide-react';
+import { PlusCircle, Trash2, Upload, Scissors } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -37,7 +37,9 @@ import { testApiSource } from '@/utils/api';
 import type { UserBase } from '@/types';
 import { cn } from '@/lib/utils';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { Switch } from '@/components/ui/switch';
+import { parseUserIds, partName, splitIntoParts } from '@/lib/user-ids';
 
 // Схема валидации
 const formSchema = z.object({
@@ -62,6 +64,11 @@ const formSchema = z.object({
 
 type UserBaseFormValues = z.infer<typeof formSchema>;
 
+const DEFAULT_PART_SIZE = 10000;
+// Guards against a typo in the part size (e.g. 1 row per part for a 100k base)
+const MAX_PARTS = 500;
+const formatCount = (n: number) => n.toLocaleString('en-US');
+
 interface UserBaseDialogProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
@@ -69,7 +76,10 @@ interface UserBaseDialogProps {
 }
 
 function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, setIsOpen: (isOpen: boolean) => void }) {
-  const { addUserBase, updateUserBase } = useUserBases();
+  const { addUserBase, addUserBases, updateUserBase } = useUserBases();
+  // Splitting is only available when creating a new static base
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [partSizeInput, setPartSizeInput] = useState(String(DEFAULT_PART_SIZE));
   const apiTester = useApiTester();
 
   // Type Guards для безопасной проверки типов
@@ -103,6 +113,19 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   });
 
   const watchType = form.watch('type');
+  const watchName = form.watch('name');
+  const watchRawUserIds = form.watch('rawUserIds');
+
+  const parsedIds = useMemo(() => parseUserIds(watchRawUserIds), [watchRawUserIds]);
+
+  const canSplit = !userBase && watchType === 'static';
+  const partSize = Number(partSizeInput);
+  const isPartSizeValid = Number.isInteger(partSize) && partSize >= 1;
+  const partsCount = isPartSizeValid ? Math.ceil(parsedIds.length / partSize) : 0;
+  const tooManyParts = partsCount > MAX_PARTS;
+  // Only actually split when it yields more than one part
+  const willSplit = canSplit && splitEnabled && isPartSizeValid && partsCount > 1 && !tooManyParts;
+  const splitBlocked = canSplit && splitEnabled && (!isPartSizeValid || tooManyParts);
 
   // Функция для загрузки файла
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,13 +151,9 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
         // Устанавливаем содержимое файла в textarea
         form.setValue('rawUserIds', content);
         
-        // Показываем количество найденных ID
-        const userIds = content.split(/[,\s\n]+/).filter(Boolean);
-        const validIds = userIds.map(id => parseInt(id.trim(), 10)).filter(Number.isFinite);
-        
-        if (validIds.length > 0) {
-          alert(`Загружено ${validIds.length} пользователей из файла "${file.name}"`);
-        } else {
+        form.clearErrors('rawUserIds');
+        // The number of IDs found is shown under the field, no separate popup needed
+        if (parseUserIds(content).length === 0) {
           alert('В файле не найдено валидных ID пользователей');
         }
       }
@@ -152,7 +171,36 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
 
   const onSubmit = async (data: UserBaseFormValues) => {
     if (data.type === 'static') {
-        const userIds = data.rawUserIds?.split(/[,\s\n]+/).filter(Boolean).map(id => parseInt(id.trim(), 10)).filter(Number.isFinite) || [];
+        const userIds = parseUserIds(data.rawUserIds);
+        if (userIds.length === 0) {
+            form.setError('rawUserIds', { message: 'No valid user IDs found' });
+            return;
+        }
+        if (splitBlocked) return;
+
+        if (willSplit) {
+            // Each part is a regular base; a shared groupId links them into a group
+            const groupId = crypto.randomUUID();
+            const groupName = data.name.trim();
+            const parts = splitIntoParts(userIds, partSize);
+            const checkedAt = new Date();
+            addUserBases(parts.map((ids, index) => ({
+                type: 'static' as const,
+                name: partName(groupName, index + 1),
+                description: data.description,
+                rawUserIds: ids.join('\n'),
+                userIds: ids,
+                userCount: ids.length,
+                lastCheckStatus: 'success' as const,
+                lastCheckedAt: checkedAt,
+                groupId,
+                groupName,
+                partIndex: index + 1,
+            })));
+            setIsOpen(false);
+            return;
+        }
+
         const staticPayload: Omit<import('@/types').StaticUserBase, 'id' | 'createdAt'> = {
             type: 'static',
             name: data.name,
@@ -221,7 +269,8 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
         </DialogDescription>
       </DialogHeader>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto pr-6">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pr-4">
           <FormField
             control={form.control}
             name="name"
@@ -300,35 +349,65 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
                     </div>
                   </div>
                   <FormControl>
-                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line. Or use the Upload File button above." className="min-h-[150px] font-mono" {...field} />
+                      <Textarea placeholder="Enter user IDs, separated by comma, space, or new line. Or use the Upload File button above." className="h-44 resize-none overflow-y-auto font-mono [field-sizing:fixed]" {...field} />
                   </FormControl>
                   <FormDescription>
-                      {(() => {
-                        const rawIds = form.watch('rawUserIds');
-                        if (!rawIds) return 'Preview: ...';
-                        
-                        const userIds = rawIds.split(/[,\s\n]+/).filter(Boolean);
-                        const validIds = userIds.map(id => parseInt(id.trim(), 10)).filter(Number.isFinite);
-                        const previewIds = validIds.slice(0, 10).join(', ');
-                        
-                        return (
-                          <span>
-                            <strong>Found {validIds.length} valid IDs</strong>
-                            {validIds.length > 0 && (
-                              <>
-                                <br />
-                                Preview: {previewIds}
-                                {validIds.length > 10 && '...'}
-                              </>
-                            )}
-                          </span>
-                        );
-                      })()}
+                    {parsedIds.length === 0 ? 'Preview: ...' : (
+                      <span>
+                        <strong>Found {formatCount(parsedIds.length)} valid IDs</strong>
+                        <br />
+                        Preview: {parsedIds.slice(0, 10).join(', ')}
+                        {parsedIds.length > 10 && '...'}
+                      </span>
+                    )}
                   </FormDescription>
                   <FormMessage />
                   </FormItem>
               )}
               />
+
+              {canSplit && (
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <label htmlFor="split-enabled" className="flex items-center gap-2 text-sm font-medium">
+                      <Scissors className="h-4 w-4" />
+                      Split into parts
+                    </label>
+                    <Switch id="split-enabled" checked={splitEnabled} onCheckedChange={setSplitEnabled} />
+                  </div>
+                  {splitEnabled && (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <label htmlFor="split-part-size" className="shrink-0 text-sm">Rows per part</label>
+                        <Input
+                          id="split-part-size"
+                          type="number"
+                          min={1}
+                          step={1}
+                          className="w-36"
+                          value={partSizeInput}
+                          onChange={(e) => setPartSizeInput(e.target.value)}
+                        />
+                      </div>
+                      <p className={cn('text-sm', splitBlocked ? 'text-destructive' : 'text-muted-foreground')} data-testid="split-summary">
+                        {!isPartSizeValid
+                          ? 'Enter a whole number of rows per part (1 or more).'
+                          : tooManyParts
+                            ? `That would create ${formatCount(partsCount)} bases (max ${MAX_PARTS}). Increase rows per part.`
+                            : parsedIds.length === 0
+                              ? 'Add user IDs to see how the base will be split.'
+                              : partsCount <= 1
+                                ? `All ${formatCount(parsedIds.length)} IDs fit into one part — a single base will be created.`
+                                : (() => {
+                                    const groupName = watchName.trim() || 'NAME';
+                                    const last = parsedIds.length - partSize * (partsCount - 1);
+                                    return `${partsCount} linked bases: ${partName(groupName, 1)} … ${partName(groupName, partsCount)} — ${formatCount(partSize)} IDs each${last !== partSize ? `, last one ${formatCount(last)}` : ''}.`;
+                                  })()}
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
           </div>
           
           <div className={cn('space-y-4 transition-all', watchType === 'api' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden')}>
@@ -417,8 +496,22 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
                   )}
               </div>
           </div>
-          <div className="flex justify-end pt-4">
-            <Button type="submit">Save</Button>
+          </div>
+          {/* Footer sits outside the scroll area: the button is visible however long the form is */}
+          <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4 mt-4">
+            <span className="text-sm text-muted-foreground">
+              {watchType === 'static' && parsedIds.length > 0 && (
+                willSplit
+                  ? `${formatCount(parsedIds.length)} IDs → ${partsCount} bases`
+                  : `${formatCount(parsedIds.length)} IDs`
+              )}
+            </span>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={splitBlocked}>
+                {willSplit ? `Create ${partsCount} bases` : 'Save'}
+              </Button>
+            </div>
           </div>
         </form>
       </Form>
@@ -429,7 +522,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
 export function UserBaseDialog({ isOpen, setIsOpen, userBase }: UserBaseDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="max-w-2xl" key={userBase?.id || 'new'}>
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl" key={userBase?.id || 'new'}>
         <UserBaseFormContent userBase={userBase} setIsOpen={setIsOpen} />
       </DialogContent>
     </Dialog>

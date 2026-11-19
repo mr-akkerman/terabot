@@ -26,7 +26,11 @@ export function CampaignRecovery() {
         }
         queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       })
-      .catch((error) => console.error('[CampaignRecovery] Recovery failed:', error));
+      .catch((error) => console.error('[CampaignRecovery] Recovery failed:', error))
+      // Lets e2e tests (and anything else) know the startup recovery pass is over.
+      .finally(() => {
+        document.documentElement.dataset.campaignRecovery = 'done';
+      });
     return () => {
       cancelled = true;
     };

@@ -47,6 +47,12 @@ interface BaseUserBase {
   lastCheckStatus?: 'success' | 'failed' | 'pending';
   lastCheckedAt?: Date;
   createdAt: Date;
+  // Linked parts: a base split into several on creation is stored as
+  // regular bases sharing a groupId. A campaign can target a single part
+  // or the whole group (parts go in partIndex order).
+  groupId?: string;
+  groupName?: string; // Group name (part name = groupName_partIndex)
+  partIndex?: number; // Part number within the group, starting at 1
 }
 
 export interface StaticUserBase extends BaseUserBase {
@@ -95,6 +101,19 @@ export interface CampaignProgress {
   sentCount: number;
   failedCount: number;
   results: SendResult[];
+  /** Per-part progress — only for campaigns over a base group. */
+  parts?: CampaignPartProgress[];
+}
+
+/**
+ * Progress of one base-group part within a campaign.
+ */
+export interface CampaignPartProgress {
+  userBaseId: string;
+  name: string;
+  totalUsers: number; // Recipients in the part (minus those already in earlier parts)
+  processedCount: number; // Sent + failed
+  status: 'pending' | 'running' | 'completed';
 }
 
 /**
@@ -106,7 +125,8 @@ export interface Campaign {
   description?: string; // Описание
   botId: string; // ID связанного бота
   message: CampaignMessage; // Сообщение для рассылки
-  userBaseId: string; // ID связанной базы пользователей
+  userBaseId: string; // ID of the linked user base (empty when a group is selected)
+  userBaseGroupId?: string; // Base group ID: the campaign goes through all of its parts in turn
   sendSettings: SendSettings; // Настройки отправки
   createdAt: Date; // Дата создания
   status: 'draft' | 'loading-users' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'idle'; // Текущий статус

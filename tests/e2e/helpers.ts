@@ -72,6 +72,9 @@ export async function seedCampaign(page: Page, { users, campaignId = 'c1', statu
     const dbs = await indexedDB.databases();
     return dbs.some((db) => db.name === 'terabot-db');
   });
+  // The app runs its startup recovery pass in a worker on every load. Seed only after it
+  // has finished, otherwise that pass may pick up the freshly seeded campaign.
+  await page.waitForSelector('html[data-campaign-recovery="done"]', { state: 'attached' });
 
   await page.evaluate(
     async ({ users, campaignId, status, withoutBot }) => {

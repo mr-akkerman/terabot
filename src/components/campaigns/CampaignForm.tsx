@@ -21,7 +21,10 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -34,6 +37,14 @@ import { TelegramPreview } from './TelegramPreview';
 import { validateTelegramHtml } from '@/lib/telegram-html';
 import { ButtonEditor } from './ButtonEditor';
 import { ImageUploader } from './ImageUploader';
+import { groupUserBases } from '@/lib/user-ids';
+
+// The form's userBaseId field holds either a base ID or a group ID with this prefix
+const GROUP_PREFIX = 'group:';
+
+/** Value of the recipient select for a saved campaign. */
+const recipientValue = (campaign: Campaign) =>
+  campaign.userBaseGroupId ? `${GROUP_PREFIX}${campaign.userBaseGroupId}` : campaign.userBaseId;
 
 const buttonSchema = z.object({
     id: z.string(),
@@ -106,6 +117,7 @@ export function CampaignForm() {
     resolver: zodResolver(campaignFormSchema),
     defaultValues: existingCampaign ? {
         ...existingCampaign,
+        userBaseId: recipientValue(existingCampaign),
         message: {
             ...existingCampaign.message,
             buttons: existingCampaign.message.buttons?.map(row => ({
@@ -132,6 +144,7 @@ export function CampaignForm() {
     if (existingCampaign) {
       form.reset({
         ...existingCampaign,
+        userBaseId: recipientValue(existingCampaign),
         message: {
             ...existingCampaign.message,
             buttons: existingCampaign.message.buttons?.map(row => ({
@@ -145,13 +158,26 @@ export function CampaignForm() {
 
   const selectedBaseId = form.watch('userBaseId');
   
+  // Groups (all parts at once) and standalone bases for the select
+  const baseEntries = useMemo(() => groupUserBases(userBases ?? []), [userBases]);
+  const baseGroups = useMemo(() => baseEntries.flatMap(e => e.kind === 'group' ? [e.group] : []), [baseEntries]);
+  const standaloneBases = useMemo(() => baseEntries.flatMap(e => e.kind === 'base' ? [e.base] : []), [baseEntries]);
+
+  const selectedGroup = useMemo(() => {
+    if (!selectedBaseId?.startsWith(GROUP_PREFIX)) return undefined;
+    return baseGroups.find(group => group.id === selectedBaseId.slice(GROUP_PREFIX.length));
+  }, [baseGroups, selectedBaseId]);
+
   const selectedUserBase = useMemo(() => {
     return userBases?.find(base => base.id === selectedBaseId);
   }, [userBases, selectedBaseId]);
 
   const onSubmit = (data: CampaignFormValues) => {
+    const isGroup = data.userBaseId.startsWith(GROUP_PREFIX);
     const campaignData = {
         ...data,
+        userBaseId: isGroup ? '' : data.userBaseId,
+        userBaseGroupId: isGroup ? data.userBaseId.slice(GROUP_PREFIX.length) : undefined,
         message: {
             ...data.message,
             id: existingCampaign?.message.id || crypto.randomUUID(),
@@ -246,18 +272,34 @@ export function CampaignForm() {
                             <FormField control={form.control} name="userBaseId" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>User Base</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <Select onValueChange={field.onChange} value={field.value ?? ''}>
                                         <FormControl><SelectTrigger>
                                             <SelectValue placeholder="Select a user base to target" />
                                         </SelectTrigger></FormControl>
                                         <SelectContent>
-                                            {userBases?.map(base => (
+                                            {baseGroups.map(group => (
+                                                <SelectGroup key={group.id}>
+                                                    <SelectLabel>{group.name}</SelectLabel>
+                                                    <SelectItem value={`${GROUP_PREFIX}${group.id}`}>
+                                                        {group.name} — all {group.parts.length} parts ({group.userCount} users)
+                                                    </SelectItem>
+                                                    {group.parts.map(part => (
+                                                        <SelectItem key={part.id} value={part.id} className="pl-6">{part.name}</SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            ))}
+                                            {baseGroups.length > 0 && standaloneBases.length > 0 && <SelectSeparator />}
+                                            {standaloneBases.map(base => (
                                                 <SelectItem key={base.id} value={base.id}>{base.name}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {selectedUserBase ? `This base contains ${selectedUserBase.userCount || 0} users.` : 'Select a base to see recipient count.'}
+                                        {selectedGroup
+                                            ? `Group of ${selectedGroup.parts.length} parts, ${selectedGroup.userCount} users in total. Parts are sent one after another (${selectedGroup.parts[0].name} first); progress is saved after each part.`
+                                            : selectedUserBase
+                                                ? `This base contains ${selectedUserBase.userCount || 0} users.`
+                                                : 'Select a base to see recipient count.'}
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

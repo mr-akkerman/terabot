@@ -34,6 +34,23 @@ export function useUserBases() {
     },
   });
 
+  // Creates several bases (parts of one group) in a single transaction
+  const { mutate: addUserBases, isPending: isAddingMany } = useMutation<void, Error, Omit<UserBase, 'id' | 'createdAt'>[]>({
+    mutationFn: (newUserBases) => {
+      const createdAt = new Date();
+      return userBaseStore.addMany(
+        newUserBases.map((base) => ({ ...base, id: crypto.randomUUID(), createdAt }) as UserBase),
+      );
+    },
+    onSuccess: (_, bases) => {
+      queryClient.invalidateQueries({ queryKey: [USER_BASES_QUERY_KEY] });
+      toast.success(`Created ${bases.length} user bases`);
+    },
+    onError: (error) => {
+      toast.error(`Failed to create user bases: ${error.message}`);
+    },
+  });
+
   // Мутация для обновления
   const { mutate: updateUserBase } = useMutation({
     mutationFn: (userBase: UserBase) => userBaseStore.update(userBase),
@@ -95,18 +112,18 @@ export function useUserBases() {
     }
   });
 
-  // Функция экспорта пользователей базы
-  const exportUserBase = (userBase: UserBase) => {
+  // Exports the users of a base (or of a whole group — the parts' IDs are merged)
+  const exportUserBase = (source: UserBase | { name: string; parts: UserBase[] }) => {
     try {
-      if (!userBase.userIds || userBase.userIds.length === 0) {
+      const userIds = 'parts' in source
+        ? [...new Set(source.parts.flatMap((part) => part.userIds ?? []))]
+        : source.userIds;
+      if (!userIds || userIds.length === 0) {
         toast.error('База пользователей пуста или не загружена');
         return;
       }
 
-      const result = ExportService.exportUserBaseAsCommaList(
-        userBase.userIds,
-        userBase.name
-      );
+      const result = ExportService.exportUserBaseAsCommaList(userIds, source.name);
 
       if (result) {
         toast.success(`Экспортировано ${result.count} пользователей в файл ${result.filename}`);
@@ -122,6 +139,8 @@ export function useUserBases() {
     isLoading,
     error,
     addUserBase,
+    addUserBases,
+    isAddingMany,
     updateUserBase,
     deleteUserBase,
     deleteUserBases,

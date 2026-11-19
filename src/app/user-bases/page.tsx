@@ -22,13 +22,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useUserBases } from '@/hooks';
 import { useCampaigns } from '@/hooks/useCampaigns';
-import { getUserBasesColumns, UserBasesAction } from '@/components/user-bases/columns';
+import { buildUserBaseRows, getUserBasesColumns, UserBasesAction, UserBaseRow } from '@/components/user-bases/columns';
+import type { UserBaseGroup } from '@/lib/user-ids';
 
 export default function UserBasesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [selectedUserBase, setSelectedUserBase] = useState<UserBase | undefined>(undefined);
   const [isBulkAlertOpen, setIsBulkAlertOpen] = useState(false);
+  // Group being deleted as a whole from its row menu (otherwise the dialog works on the selected rows)
+  const [groupToDelete, setGroupToDelete] = useState<UserBaseGroup | undefined>(undefined);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const { userBases, isLoading, error, deleteUserBase, deleteUserBases, isDeletingMany, checkUserBase, exportUserBase } = useUserBases();
   const { campaigns } = useCampaigns();
@@ -39,11 +42,25 @@ export default function UserBasesPage() {
     [userBases, rowSelection],
   );
 
-  // Кампании, которые ссылаются на выбранные базы, — после удаления их нельзя будет запустить
+  const rows = useMemo(() => buildUserBaseRows(userBases ?? []), [userBases]);
+
+  // What the bulk delete dialog removes: a group from its row menu, or the selected rows
+  const basesToDelete = groupToDelete ? groupToDelete.parts : selectedUserBases;
+
+  // Campaigns that reference the bases being deleted — they won't be able to run afterwards.
+  // A group campaign only breaks when every part of its group is deleted.
   const affectedCampaigns = useMemo(() => {
-    const selectedIds = new Set(selectedUserBases.map((base) => base.id));
-    return (campaigns ?? []).filter((campaign) => selectedIds.has(campaign.userBaseId));
-  }, [campaigns, selectedUserBases]);
+    const deletedIds = new Set(basesToDelete.map((base) => base.id));
+    const survivingGroupIds = new Set(
+      (userBases ?? []).filter((base) => base.groupId && !deletedIds.has(base.id)).map((base) => base.groupId),
+    );
+    const deletedGroupIds = new Set(basesToDelete.map((base) => base.groupId).filter(Boolean));
+    return (campaigns ?? []).filter((campaign) =>
+      campaign.userBaseGroupId
+        ? deletedGroupIds.has(campaign.userBaseGroupId) && !survivingGroupIds.has(campaign.userBaseGroupId)
+        : deletedIds.has(campaign.userBaseId),
+    );
+  }, [campaigns, basesToDelete, userBases]);
 
   const handleAction = useCallback((action: UserBasesAction) => {
     switch (action.type) {
@@ -60,6 +77,13 @@ export default function UserBasesPage() {
         break;
       case 'export':
         exportUserBase(action.userBase);
+        break;
+      case 'export-group':
+        exportUserBase(action.group);
+        break;
+      case 'delete-group':
+        setGroupToDelete(action.group);
+        setIsBulkAlertOpen(true);
         break;
     }
   }, [checkUserBase, exportUserBase]);
@@ -85,11 +109,21 @@ export default function UserBasesPage() {
   };
 
   const handleBulkDeleteConfirm = () => {
-    const ids = selectedUserBases.map((base) => base.id);
+    const ids = basesToDelete.map((base) => base.id);
     if (ids.length > 0) {
-      deleteUserBases(ids, { onSuccess: () => setRowSelection({}) });
+      const deleted = new Set(ids);
+      deleteUserBases(ids, {
+        onSuccess: () => setRowSelection((selection) =>
+          Object.fromEntries(Object.entries(selection).filter(([id]) => !deleted.has(id))),
+        ),
+      });
     }
     setIsBulkAlertOpen(false);
+  };
+
+  const openBulkDeleteForSelection = () => {
+    setGroupToDelete(undefined);
+    setIsBulkAlertOpen(true);
   };
 
   const MAX_LISTED = 10;
@@ -108,8 +142,10 @@ export default function UserBasesPage() {
       </div>
       <DataTable
         columns={columns}
-        data={userBases || []}
-        getRowId={(base) => base.id}
+        data={rows}
+        getRowId={(row: UserBaseRow) => row.id}
+        getSubRows={(row: UserBaseRow) => row.subRows}
+        canSelectRow={(row) => !row.original.group}
         rowSelection={rowSelection}
         onRowSelectionChange={setRowSelection}
         toolbar={
@@ -121,7 +157,7 @@ export default function UserBasesPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => setIsBulkAlertOpen(true)}
+                onClick={openBulkDeleteForSelection}
                 disabled={isDeletingMany}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -158,17 +194,19 @@ export default function UserBasesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {selectedUserBases.length} user base{selectedUserBases.length === 1 ? '' : 's'}?
+              {groupToDelete
+                ? `Delete group "${groupToDelete.name}" (${basesToDelete.length} part${basesToDelete.length === 1 ? '' : 's'})?`
+                : `Delete ${basesToDelete.length} user base${basesToDelete.length === 1 ? '' : 's'}?`}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm text-muted-foreground">
                 <p>This action cannot be undone. The following user bases will be permanently deleted:</p>
                 <ul className="max-h-48 list-disc space-y-1 overflow-y-auto pl-5">
-                  {selectedUserBases.slice(0, MAX_LISTED).map((base) => (
+                  {basesToDelete.slice(0, MAX_LISTED).map((base) => (
                     <li key={base.id}>{base.name}</li>
                   ))}
-                  {selectedUserBases.length > MAX_LISTED && (
-                    <li>…and {selectedUserBases.length - MAX_LISTED} more</li>
+                  {basesToDelete.length > MAX_LISTED && (
+                    <li>…and {basesToDelete.length - MAX_LISTED} more</li>
                   )}
                 </ul>
                 {affectedCampaigns.length > 0 && (
@@ -184,7 +222,7 @@ export default function UserBasesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleBulkDeleteConfirm}>
-              Delete {selectedUserBases.length}
+              Delete {basesToDelete.length}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

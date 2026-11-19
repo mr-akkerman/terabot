@@ -126,6 +126,13 @@ export const userBaseStore = {
     const db = await initDB();
     return db.add('userBases', userBase);
   },
+  /** Creates several bases in one transaction: all of them or none. */
+  async addMany(userBases: UserBase[]): Promise<void> {
+    const db = await initDB();
+    const tx = db.transaction('userBases', 'readwrite');
+    await Promise.all(userBases.map((userBase) => tx.store.add(userBase)));
+    await tx.done;
+  },
   async update(userBase: UserBase): Promise<string> {
     const db = await initDB();
     return db.put('userBases', userBase);

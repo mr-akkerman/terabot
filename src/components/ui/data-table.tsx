@@ -7,6 +7,9 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  getExpandedRowModel,
+  ExpandedState,
+  Row,
   useReactTable,
   SortingState,
   ColumnFiltersState,
@@ -37,6 +40,10 @@ interface DataTableProps<TData, TValue> {
   onRowSelectionChange?: OnChangeFn<RowSelectionState>;
   /** Стабильный ID строки — нужен, чтобы выбор не съезжал при изменении данных. */
   getRowId?: (row: TData) => string;
+  /** Nested rows (expandable groups). */
+  getSubRows?: (row: TData) => TData[] | undefined;
+  /** Which rows can be selected (all by default when selection is enabled). */
+  canSelectRow?: (row: Row<TData>) => boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -47,10 +54,13 @@ export function DataTable<TData, TValue>({
   rowSelection,
   onRowSelectionChange,
   getRowId,
+  getSubRows,
+  canSelectRow,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [expanded, setExpanded] = useState<ExpandedState>({});
 
   const table = useReactTable({
     data,
@@ -63,12 +73,18 @@ export function DataTable<TData, TValue>({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     getRowId,
-    enableRowSelection: !!onRowSelectionChange,
+    getSubRows,
+    getExpandedRowModel: getExpandedRowModel(),
+    onExpandedChange: setExpanded,
+    // Expanded parts don't take up page slots and never get separated from their group
+    paginateExpandedRows: false,
+    enableRowSelection: onRowSelectionChange ? (canSelectRow ?? true) : false,
     onRowSelectionChange,
     state: {
       sorting,
       columnFilters,
       columnVisibility,
+      expanded,
       ...(rowSelection ? { rowSelection } : {}),
     },
   });
