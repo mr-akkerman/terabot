@@ -1,10 +1,10 @@
 import type { UserBase } from '@/types';
 
 /**
- * Разбирает «сырой» список ID (разделители: пробел, запятая, точка с запятой, перенос строки).
- * Оставляет только положительные целые и убирает дубликаты, сохраняя порядок.
- * Это единственный парсер ID: его используют и форма базы, и рассылка, поэтому
- * количество в интерфейсе всегда совпадает с тем, что реально уйдёт в отправку.
+ * Parses a raw ID list (separators: whitespace, comma, semicolon, newline).
+ * Keeps only positive integers and drops duplicates, preserving order.
+ * This is the only ID parser: both the base form and the sender use it, so
+ * the count shown in the UI always matches what is actually sent.
  */
 export function parseUserIds(raw: string | undefined | null): number[] {
   if (!raw) return [];
@@ -17,7 +17,7 @@ export function parseUserIds(raw: string | undefined | null): number[] {
   return [...seen];
 }
 
-/** Режет список на части по `size` элементов (последняя может быть короче). */
+/** Splits a list into parts of `size` items (the last one may be shorter). */
 export function splitIntoParts<T>(items: T[], size: number): T[][] {
   if (!Number.isInteger(size) || size < 1) throw new Error('Part size must be a positive integer');
   const parts: T[][] = [];
@@ -27,7 +27,7 @@ export function splitIntoParts<T>(items: T[], size: number): T[][] {
   return parts;
 }
 
-/** Имя части группы: PROMO-СВОИ → PROMO-СВОИ_1, PROMO-СВОИ_2, … */
+/** Name of a group part: PROMO-TEAM → PROMO-TEAM_1, PROMO-TEAM_2, … */
 export function partName(groupName: string, partIndex: number): string {
   return `${groupName}_${partIndex}`;
 }
@@ -35,13 +35,13 @@ export function partName(groupName: string, partIndex: number): string {
 export interface UserBaseGroup {
   id: string;
   name: string;
-  /** Части в порядке рассылки */
+  /** Parts in sending order */
   parts: UserBase[];
   userCount: number;
   createdAt: Date;
 }
 
-/** Части одной группы в порядке рассылки. */
+/** Parts of one group in sending order. */
 export function getGroupParts(bases: UserBase[], groupId: string): UserBase[] {
   return bases
     .filter((base) => base.groupId === groupId)
@@ -53,8 +53,8 @@ export type UserBaseEntry =
   | { kind: 'group'; group: UserBaseGroup };
 
 /**
- * Сворачивает плоский список баз: части одной группы превращаются в одну запись
- * (на месте первой встреченной части), одиночные базы остаются как есть.
+ * Collapses a flat list of bases: the parts of a group become a single entry
+ * (placed where its first part was found), standalone bases stay as they are.
  */
 export function groupUserBases(bases: UserBase[]): UserBaseEntry[] {
   const entries: UserBaseEntry[] = [];

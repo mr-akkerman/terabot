@@ -22,7 +22,7 @@ async function openApp(page: Page, path: string) {
   await page.waitForFunction(async () => (await indexedDB.databases()).some((db) => db.name === 'terabot-db'));
 }
 
-/** Создаёт бота, группу «PROMO» из частей PROMO_1… и (опционально) кампанию по всей группе. */
+/** Seeds a bot, a "PROMO" group of parts PROMO_1… and (optionally) a campaign over the whole group. */
 async function seedGroup(page: Page, parts: PartSeed[], withCampaign = false) {
   await page.evaluate(
     async ({ parts, withCampaign }) => {
@@ -35,7 +35,7 @@ async function seedGroup(page: Page, parts: PartSeed[], withCampaign = false) {
       tx.objectStore('bots').put({ id: 'bot1', name: 'Test bot', token: '123:TEST' });
       parts.forEach((part, i) => {
         tx.objectStore('userBases').put({
-          // id специально идут в обратном порядке: порядок частей задаёт partIndex, а не ключ
+          // ids are deliberately in reverse order: part order comes from partIndex, not the key
           id: `part-${String(parts.length - i).padStart(2, '0')}`,
           name: `PROMO_${i + 1}`,
           type: 'static',
@@ -112,36 +112,36 @@ test.describe('Creating a user base', () => {
     await openApp(page, '/user-bases');
     await page.getByRole('button', { name: 'Create User Base' }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Name').fill('PROMO-СВОИ');
+    await dialog.getByLabel('Name').fill('PROMO-TEAM');
     await dialog.locator('#userIds-file-upload').setInputFiles({
       name: 'ids.txt', mimeType: 'text/plain', buffer: Buffer.from(range(1, 5000).join('\n')),
     });
     await dialog.getByRole('switch', { name: 'Split into parts' }).click();
     await dialog.getByLabel('Rows per part').fill('2000');
     await expect(dialog.getByTestId('split-summary')).toHaveText(
-      '3 linked bases: PROMO-СВОИ_1 … PROMO-СВОИ_3 — 2,000 IDs each, last one 1,000.',
+      '3 linked bases: PROMO-TEAM_1 … PROMO-TEAM_3 — 2,000 IDs each, last one 1,000.',
     );
     await dialog.getByRole('button', { name: 'Create 3 bases' }).click();
 
     await expect(page.getByText('Created 3 user bases')).toBeVisible();
-    const groupRow = page.getByRole('row', { name: /PROMO-СВОИ 3 parts/ });
+    const groupRow = page.getByRole('row', { name: /PROMO-TEAM 3 parts/ });
     await expect(groupRow).toBeVisible();
     await expect(groupRow.getByRole('cell', { name: '5000', exact: true })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'PROMO-СВОИ_1' })).toHaveCount(0);
+    await expect(page.getByRole('cell', { name: 'PROMO-TEAM_1' })).toHaveCount(0);
 
-    const toggle = groupRow.getByRole('button', { name: 'PROMO-СВОИ 3 parts' });
+    const toggle = groupRow.getByRole('button', { name: 'PROMO-TEAM 3 parts' });
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByRole('row').filter({ hasText: /PROMO-СВОИ_\d/ })).toHaveText([
-      /PROMO-СВОИ_1.*2000/, /PROMO-СВОИ_2.*2000/, /PROMO-СВОИ_3.*1000/,
+    await expect(page.getByRole('row').filter({ hasText: /PROMO-TEAM_\d/ })).toHaveText([
+      /PROMO-TEAM_1.*2000/, /PROMO-TEAM_2.*2000/, /PROMO-TEAM_3.*1000/,
     ]);
 
     const bases = (await readStore<StoredBase>(page, 'userBases')).sort((a, b) => a.partIndex! - b.partIndex!);
     expect(bases.map((b) => [b.name, b.userCount, b.partIndex, b.groupName])).toEqual([
-      ['PROMO-СВОИ_1', 2000, 1, 'PROMO-СВОИ'],
-      ['PROMO-СВОИ_2', 2000, 2, 'PROMO-СВОИ'],
-      ['PROMO-СВОИ_3', 1000, 3, 'PROMO-СВОИ'],
+      ['PROMO-TEAM_1', 2000, 1, 'PROMO-TEAM'],
+      ['PROMO-TEAM_2', 2000, 2, 'PROMO-TEAM'],
+      ['PROMO-TEAM_3', 1000, 3, 'PROMO-TEAM'],
     ]);
     expect(new Set(bases.map((b) => b.groupId)).size).toBe(1);
     expect(bases[1].userIds[0]).toBe(2001);
@@ -210,13 +210,13 @@ test.describe('Campaign over a base group', () => {
   test('sends part by part, saves progress after each part and resumes from the right part', async ({ page, context }) => {
     const telegram = await mockTelegram(context, { isBlocked: () => false });
     await openApp(page, '/campaigns');
-    // 1 и 2 есть и в первой, и во второй части — второй раз им писать нельзя
+    // 1 and 2 are in both the first and the second part — they must not be messaged twice
     const parts = [{ ids: range(1, 40) }, { ids: [1, 2, ...range(41, 80)] }, { ids: range(81, 100) }];
     await seedGroup(page, parts, true);
     await page.goto('/campaigns/c1');
     await controlButton(page, 'Start').click();
 
-    // Пауза посреди второй части
+    // Pause in the middle of the second part
     await waitForRequests(page, telegram, 55);
     await controlButton(page, 'Pause').click();
     await waitForCampaignStatus(page, 'paused');
@@ -231,7 +231,7 @@ test.describe('Campaign over a base group', () => {
     ]);
     expect(campaign.progress.parts[0].processedCount).toBe(40);
     await expect(page.getByTestId('campaign-parts')).toContainText('Parts: 1 of 3 sent');
-    // Третью часть ещё не трогали
+    // The third part has not been touched yet
     expect(telegram.requests.some((r) => r.chatId > 80)).toBe(false);
 
     await controlButton(page, 'Resume').click();
@@ -241,7 +241,7 @@ test.describe('Campaign over a base group', () => {
     expect(telegram.deliveries.size).toBe(100);
     expect(telegram.duplicates()).toEqual([]);
 
-    // Части идут строго по очереди: ни одного запроса из следующей части раньше конца предыдущей
+    // Parts go strictly in order: no request from a later part before the previous one ends
     const partOf = (chatId: number) => (chatId <= 40 ? 1 : chatId <= 80 ? 2 : 3);
     const order = telegram.requests.map((r) => partOf(r.chatId));
     expect(order).toEqual([...order].sort((a, b) => a - b));

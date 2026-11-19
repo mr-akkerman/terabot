@@ -40,9 +40,9 @@ interface DataTableProps<TData, TValue> {
   onRowSelectionChange?: OnChangeFn<RowSelectionState>;
   /** Стабильный ID строки — нужен, чтобы выбор не съезжал при изменении данных. */
   getRowId?: (row: TData) => string;
-  /** Вложенные строки (раскрывающиеся группы). */
+  /** Nested rows (expandable groups). */
   getSubRows?: (row: TData) => TData[] | undefined;
-  /** Какие строки можно выбирать (по умолчанию все, если включён выбор). */
+  /** Which rows can be selected (all by default when selection is enabled). */
   canSelectRow?: (row: Row<TData>) => boolean;
 }
 
@@ -76,7 +76,7 @@ export function DataTable<TData, TValue>({
     getSubRows,
     getExpandedRowModel: getExpandedRowModel(),
     onExpandedChange: setExpanded,
-    // Раскрытые части не съедают места на странице и не отрываются от своей группы
+    // Expanded parts don't take up page slots and never get separated from their group
     paginateExpandedRows: false,
     enableRowSelection: onRowSelectionChange ? (canSelectRow ?? true) : false,
     onRowSelectionChange,

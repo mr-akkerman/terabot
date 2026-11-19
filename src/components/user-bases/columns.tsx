@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { groupUserBases, type UserBaseGroup } from '@/lib/user-ids';
 
 /**
- * Строка таблицы баз: либо обычная база, либо группа частей (тогда части — в subRows).
+ * A row of the user bases table: a regular base or a group of parts (parts go to subRows).
  */
 export interface UserBaseRow {
   id: string;
@@ -45,7 +45,7 @@ const toBaseRow = (base: UserBase): UserBaseRow => ({
   base,
 });
 
-/** Плоский список баз → строки таблицы, где части одной группы свёрнуты в одну строку. */
+/** Flat list of bases → table rows, with the parts of a group collapsed into one row. */
 export function buildUserBaseRows(userBases: UserBase[]): UserBaseRow[] {
   return groupUserBases(userBases).map((entry) => {
     if (entry.kind === 'base') return toBaseRow(entry.base);
@@ -92,7 +92,7 @@ export const getUserBasesColumns = ({ onAction }: GetColumnsOptions): ColumnDef<
       />
     ),
     cell: ({ row }) => {
-      // Сама группа не выбирается: её чекбокс выбирает/снимает все части
+      // The group itself is not selectable: its checkbox toggles all of its parts
       if (row.original.group) {
         const allSelected = row.getIsAllSubRowsSelected();
         return (

@@ -34,7 +34,7 @@ export function useUserBases() {
     },
   });
 
-  // Создание сразу нескольких баз (части одной группы) одной транзакцией
+  // Creates several bases (parts of one group) in a single transaction
   const { mutate: addUserBases, isPending: isAddingMany } = useMutation<void, Error, Omit<UserBase, 'id' | 'createdAt'>[]>({
     mutationFn: (newUserBases) => {
       const createdAt = new Date();
@@ -112,7 +112,7 @@ export function useUserBases() {
     }
   });
 
-  // Функция экспорта пользователей базы (или всей группы — тогда ID частей склеиваются)
+  // Exports the users of a base (or of a whole group — the parts' IDs are merged)
   const exportUserBase = (source: UserBase | { name: string; parts: UserBase[] }) => {
     try {
       const userIds = 'parts' in source

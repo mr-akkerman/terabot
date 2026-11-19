@@ -65,7 +65,7 @@ const formSchema = z.object({
 type UserBaseFormValues = z.infer<typeof formSchema>;
 
 const DEFAULT_PART_SIZE = 10000;
-// Защита от опечатки в размере части (например, 1 строка на часть при базе в 100к)
+// Guards against a typo in the part size (e.g. 1 row per part for a 100k base)
 const MAX_PARTS = 500;
 const formatCount = (n: number) => n.toLocaleString('en-US');
 
@@ -77,7 +77,7 @@ interface UserBaseDialogProps {
 
 function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, setIsOpen: (isOpen: boolean) => void }) {
   const { addUserBase, addUserBases, updateUserBase } = useUserBases();
-  // Разбивка на части доступна только при создании новой статической базы
+  // Splitting is only available when creating a new static base
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [partSizeInput, setPartSizeInput] = useState(String(DEFAULT_PART_SIZE));
   const apiTester = useApiTester();
@@ -123,7 +123,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
   const isPartSizeValid = Number.isInteger(partSize) && partSize >= 1;
   const partsCount = isPartSizeValid ? Math.ceil(parsedIds.length / partSize) : 0;
   const tooManyParts = partsCount > MAX_PARTS;
-  // Реально делим, только если получается больше одной части
+  // Only actually split when it yields more than one part
   const willSplit = canSplit && splitEnabled && isPartSizeValid && partsCount > 1 && !tooManyParts;
   const splitBlocked = canSplit && splitEnabled && (!isPartSizeValid || tooManyParts);
 
@@ -152,7 +152,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
         form.setValue('rawUserIds', content);
         
         form.clearErrors('rawUserIds');
-        // Количество найденных ID показывается под полем, отдельное окно не нужно
+        // The number of IDs found is shown under the field, no separate popup needed
         if (parseUserIds(content).length === 0) {
           alert('В файле не найдено валидных ID пользователей');
         }
@@ -179,7 +179,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
         if (splitBlocked) return;
 
         if (willSplit) {
-            // Каждая часть — обычная база; общий groupId связывает их в группу
+            // Each part is a regular base; a shared groupId links them into a group
             const groupId = crypto.randomUUID();
             const groupName = data.name.trim();
             const parts = splitIntoParts(userIds, partSize);
@@ -497,7 +497,7 @@ function UserBaseFormContent({ userBase, setIsOpen }: { userBase?: UserBase, set
               </div>
           </div>
           </div>
-          {/* Футер вне прокручиваемой области: кнопка видна при любой длине формы */}
+          {/* Footer sits outside the scroll area: the button is visible however long the form is */}
           <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4 mt-4">
             <span className="text-sm text-muted-foreground">
               {watchType === 'static' && parsedIds.length > 0 && (

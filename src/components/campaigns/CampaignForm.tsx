@@ -39,10 +39,10 @@ import { ButtonEditor } from './ButtonEditor';
 import { ImageUploader } from './ImageUploader';
 import { groupUserBases } from '@/lib/user-ids';
 
-// В поле userBaseId формы лежит либо ID базы, либо ID группы с этим префиксом
+// The form's userBaseId field holds either a base ID or a group ID with this prefix
 const GROUP_PREFIX = 'group:';
 
-/** Значение поля выбора получателей для сохранённой кампании. */
+/** Value of the recipient select for a saved campaign. */
 const recipientValue = (campaign: Campaign) =>
   campaign.userBaseGroupId ? `${GROUP_PREFIX}${campaign.userBaseGroupId}` : campaign.userBaseId;
 
@@ -158,7 +158,7 @@ export function CampaignForm() {
 
   const selectedBaseId = form.watch('userBaseId');
   
-  // Группы (все части разом) и одиночные базы для списка выбора
+  // Groups (all parts at once) and standalone bases for the select
   const baseEntries = useMemo(() => groupUserBases(userBases ?? []), [userBases]);
   const baseGroups = useMemo(() => baseEntries.flatMap(e => e.kind === 'group' ? [e.group] : []), [baseEntries]);
   const standaloneBases = useMemo(() => baseEntries.flatMap(e => e.kind === 'base' ? [e.base] : []), [baseEntries]);

@@ -30,7 +30,7 @@ export default function UserBasesPage() {
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [selectedUserBase, setSelectedUserBase] = useState<UserBase | undefined>(undefined);
   const [isBulkAlertOpen, setIsBulkAlertOpen] = useState(false);
-  // Группа, которую удаляют целиком из меню строки (иначе диалог работает по выбранным строкам)
+  // Group being deleted as a whole from its row menu (otherwise the dialog works on the selected rows)
   const [groupToDelete, setGroupToDelete] = useState<UserBaseGroup | undefined>(undefined);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const { userBases, isLoading, error, deleteUserBase, deleteUserBases, isDeletingMany, checkUserBase, exportUserBase } = useUserBases();
@@ -44,11 +44,11 @@ export default function UserBasesPage() {
 
   const rows = useMemo(() => buildUserBaseRows(userBases ?? []), [userBases]);
 
-  // Что удаляет диалог массового удаления: группу из меню строки или выбранные строки
+  // What the bulk delete dialog removes: a group from its row menu, or the selected rows
   const basesToDelete = groupToDelete ? groupToDelete.parts : selectedUserBases;
 
-  // Кампании, которые ссылаются на удаляемые базы, — после удаления их нельзя будет запустить.
-  // Кампания по группе ломается, только если удаляются все части этой группы.
+  // Campaigns that reference the bases being deleted — they won't be able to run afterwards.
+  // A group campaign only breaks when every part of its group is deleted.
   const affectedCampaigns = useMemo(() => {
     const deletedIds = new Set(basesToDelete.map((base) => base.id));
     const survivingGroupIds = new Set(

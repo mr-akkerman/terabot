@@ -48,7 +48,7 @@ describe('groups', () => {
   ];
 
   it('names parts with a numeric suffix', () => {
-    expect(partName('PROMO-СВОИ', 3)).toBe('PROMO-СВОИ_3');
+    expect(partName('PROMO-TEAM', 3)).toBe('PROMO-TEAM_3');
   });
 
   it('orders parts numerically', () => {

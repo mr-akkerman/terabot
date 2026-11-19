@@ -10,17 +10,17 @@ type RunnerStatus = 'idle' | 'loading-users' | 'running' | 'paused' | 'stopped' 
 
 interface CampaignRunnerOptions {
   campaign: Campaign;
-  /** Базы в порядке рассылки: одна обычная база или все части группы. */
+  /** Bases in sending order: a single regular base or all parts of a group. */
   userBases: UserBase[];
   bot: Bot;
   onProgress: (progress: CampaignProgress) => void;
-  /** Часть группы разослана целиком — прогресс нужно сразу сохранить. */
+  /** A group part has been fully sent — progress must be saved right away. */
   onPartComplete?: (progress: CampaignProgress) => void | Promise<void>;
   onFinish: (status: RunnerStatus, finalProgress: CampaignProgress) => void;
   onError: (error: Error, finalProgress: CampaignProgress) => void;
 }
 
-/** Часть рассылки: база и её получатели (без тех, кто уже есть в предыдущих частях). */
+/** One part of a campaign: a base and its recipients (minus those already in earlier parts). */
 interface PartPlan {
   userBase: UserBase;
   userIds: number[];
@@ -33,8 +33,8 @@ export class CampaignRunner {
   private readonly api: TelegramAPI;
   private readonly limiter: TelegramLimiter;
   private shouldStop = false; // Флаг для контроля выполнения промисов
-  // Номер запуска: цикл рассылки, оставшийся от запуска до паузы, не должен
-  // продолжить работу параллельно с новым после быстрого resume.
+  // Run number: a send loop left over from before a pause must not keep
+  // running alongside the new one after a quick resume.
   private generation = 0;
 
   constructor(private readonly options: CampaignRunnerOptions) {
@@ -66,8 +66,8 @@ export class CampaignRunner {
 
   /**
    * Starts a campaign, resuming from its last known state.
-   * Базы рассылаются строго по очереди: следующая часть начинается только после
-   * того, как предыдущая разослана целиком и её прогресс сохранён.
+   * Bases are sent strictly one after another: the next part starts only after
+   * the previous one is fully sent and its progress is saved.
    */
   public async start() {
     if (this.status === 'running' || this.status === 'loading-users') return;
@@ -80,7 +80,7 @@ export class CampaignRunner {
         this.shouldStop = false; // Сбрасываем флаг остановки
         
         this.log(`Loading ${this.options.userBases.length} user base(s)...`);
-        // Получатель, попавший в несколько частей, остаётся только в первой из них.
+        // A recipient present in several parts is kept only in the first of them.
         const seen = new Set<number>();
         const plan: PartPlan[] = [];
         for (const userBase of this.options.userBases) {
@@ -175,7 +175,7 @@ export class CampaignRunner {
     }
   }
 
-  /** Запуск всё ещё актуален и не поставлен на паузу/остановлен. */
+  /** This run is still the current one and has not been paused/stopped. */
   private isActive(generation: number) {
     return generation === this.generation && this.status === 'running' && !this.shouldStop;
   }
@@ -199,7 +199,7 @@ export class CampaignRunner {
         this.log(`Part ${partIndex + 1}/${plan.length} "${userBase.name}": ${toProcess.length} users to process.`);
         if (partProgress) partProgress.status = 'running';
 
-        // В очередь в БД попадают только получатели текущей части.
+        // Only the current part's recipients are queued in the DB.
         const newUsersToQueue = toProcess.filter(id => !pendingSet.has(id));
         if (newUsersToQueue.length > 0) {
             await campaignRecipientStore.bulkAdd(
@@ -214,7 +214,7 @@ export class CampaignRunner {
 
         if (partProgress) partProgress.status = 'completed';
         this.log(`Part ${partIndex + 1}/${plan.length} "${userBase.name}" completed, saving progress.`);
-        // Прогресс части сохраняем до того, как начнётся следующая.
+        // Save the part's progress before the next one starts.
         await this.options.onPartComplete?.(this.progress);
     }
 
@@ -227,7 +227,7 @@ export class CampaignRunner {
     }
   }
 
-  /** Рассылает список получателей. Возвращает false, если рассылку прервали. */
+  /** Sends to a list of recipients. Returns false if sending was interrupted. */
   private async sendUsers(userIds: number[], partProgress: CampaignPartProgress | undefined, generation: number): Promise<boolean> {
     const campaignId = this.options.campaign.id;
 

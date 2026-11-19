@@ -126,7 +126,7 @@ export const userBaseStore = {
     const db = await initDB();
     return db.add('userBases', userBase);
   },
-  /** Создаёт несколько баз одной транзакцией: либо все, либо ни одной. */
+  /** Creates several bases in one transaction: all of them or none. */
   async addMany(userBases: UserBase[]): Promise<void> {
     const db = await initDB();
     const tx = db.transaction('userBases', 'readwrite');

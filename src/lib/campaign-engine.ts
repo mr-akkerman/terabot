@@ -118,7 +118,7 @@ export class CampaignEngine {
 
     let userBases: UserBase[];
     if (campaign.userBaseGroupId) {
-      // Рассылка по группе: все её части по порядку
+      // Group campaign: all of its parts, in order
       userBases = getGroupParts(await userBaseStore.getAll(), campaign.userBaseGroupId);
       if (userBases.length === 0) throw new Error('User base group not found for campaign');
     } else {
@@ -152,7 +152,7 @@ export class CampaignEngine {
       },
       onPartComplete: async (progress) => {
         if (!isCurrent()) return;
-        // Часть разослана — пишем прогресс в БД сразу, не дожидаясь таймера
+        // A part is done — persist progress right away instead of waiting for the timer
         this.pendingProgress.set(campaignId, progress);
         await this.flushProgress(campaignId);
       },
