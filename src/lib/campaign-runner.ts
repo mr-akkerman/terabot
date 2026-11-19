@@ -1,4 +1,4 @@
-import type { Campaign, UserBase, Bot, CampaignProgress } from '@/types';
+import type { Campaign, UserBase, Bot, CampaignProgress, CampaignPartProgress } from '@/types';
 import { TelegramAPI, TelegramApiError } from '@/utils/telegram';
 import { TelegramLimiter, LimiterStoppedError } from './telegram-limiter';
 import { UserBaseLoader } from './user-base-loader';
@@ -10,11 +10,20 @@ type RunnerStatus = 'idle' | 'loading-users' | 'running' | 'paused' | 'stopped' 
 
 interface CampaignRunnerOptions {
   campaign: Campaign;
-  userBase: UserBase;
+  /** Базы в порядке рассылки: одна обычная база или все части группы. */
+  userBases: UserBase[];
   bot: Bot;
   onProgress: (progress: CampaignProgress) => void;
+  /** Часть группы разослана целиком — прогресс нужно сразу сохранить. */
+  onPartComplete?: (progress: CampaignProgress) => void | Promise<void>;
   onFinish: (status: RunnerStatus, finalProgress: CampaignProgress) => void;
   onError: (error: Error, finalProgress: CampaignProgress) => void;
+}
+
+/** Часть рассылки: база и её получатели (без тех, кто уже есть в предыдущих частях). */
+interface PartPlan {
+  userBase: UserBase;
+  userIds: number[];
 }
 
 export class CampaignRunner {
@@ -23,8 +32,10 @@ export class CampaignRunner {
   
   private readonly api: TelegramAPI;
   private readonly limiter: TelegramLimiter;
-  private userIdsToProcess: number[] = [];
   private shouldStop = false; // Флаг для контроля выполнения промисов
+  // Номер запуска: цикл рассылки, оставшийся от запуска до паузы, не должен
+  // продолжить работу параллельно с новым после быстрого resume.
+  private generation = 0;
 
   constructor(private readonly options: CampaignRunnerOptions) {
     this.api = new TelegramAPI(options.bot.token, { logger: console.log });
@@ -55,70 +66,87 @@ export class CampaignRunner {
 
   /**
    * Starts a campaign, resuming from its last known state.
+   * Базы рассылаются строго по очереди: следующая часть начинается только после
+   * того, как предыдущая разослана целиком и её прогресс сохранён.
    */
   public async start() {
     if (this.status === 'running' || this.status === 'loading-users') return;
     this.log('Starting or resuming campaign...');
+    const generation = ++this.generation;
+    const campaignId = this.options.campaign.id;
     
     try {
         this.status = 'loading-users';
         this.shouldStop = false; // Сбрасываем флаг остановки
         
-        this.log('Loading user base...');
-        const loader = new UserBaseLoader(this.options.userBase, (s, m) => this.log(`[UserLoader:${s}] ${m}`));
-        const allUserIds = await loader.loadUserIds();
+        this.log(`Loading ${this.options.userBases.length} user base(s)...`);
+        // Получатель, попавший в несколько частей, остаётся только в первой из них.
+        const seen = new Set<number>();
+        const plan: PartPlan[] = [];
+        for (const userBase of this.options.userBases) {
+            const loader = new UserBaseLoader(userBase, (s, m) => this.log(`[UserLoader:${userBase.name}:${s}] ${m}`));
+            const userIds = (await loader.loadUserIds()).filter(id => !seen.has(id));
+            userIds.forEach(id => seen.add(id));
+            plan.push({ userBase, userIds });
+        }
         
         this.log('Checking for existing progress in DB...');
-        // Используем новый метод для получения только обработанных пользователей
-        const processedUserIds = await campaignRecipientStore.getProcessedUserIds(this.options.campaign.id);
-        const processedSet = new Set(processedUserIds);
+        const processedSet = new Set(await campaignRecipientStore.getProcessedUserIds(campaignId));
+        const stats = await campaignRecipientStore.getCampaignStats(campaignId);
+        const pendingRecipients = await campaignRecipientStore.getPendingRecipients(campaignId);
+        const pendingSet = new Set(pendingRecipients.map(r => r.userId));
+        if (generation !== this.generation || this.shouldStop) return;
         
-        // Получаем статистику для обновления прогресса
-        const stats = await campaignRecipientStore.getCampaignStats(this.options.campaign.id);
-        
-        this.userIdsToProcess = allUserIds.filter(id => !processedSet.has(id));
-        this.progress.totalUsers = allUserIds.length;
+        this.progress.totalUsers = seen.size;
         this.progress.sentCount = stats.success;
         this.progress.failedCount = stats.failed;
+        if (this.options.campaign.userBaseGroupId) {
+            this.progress.parts = plan.map(({ userBase, userIds }) => {
+                const processedCount = userIds.reduce((n, id) => n + (processedSet.has(id) ? 1 : 0), 0);
+                return {
+                    userBaseId: userBase.id,
+                    name: userBase.name,
+                    totalUsers: userIds.length,
+                    processedCount,
+                    status: processedCount >= userIds.length ? 'completed' as const : 'pending' as const,
+                };
+            });
+        } else {
+            delete this.progress.parts;
+        }
 
-        this.log(`Campaign stats: Total: ${allUserIds.length}, Processed: ${processedUserIds.length} (Success: ${stats.success}, Failed: ${stats.failed}), Pending: ${stats.pending}, To Process: ${this.userIdsToProcess.length}`);
+        const leftToProcess = plan.reduce((n, part) => n + part.userIds.filter(id => !processedSet.has(id)).length, 0);
+        this.log(`Campaign stats: Total: ${seen.size}, Success: ${stats.success}, Failed: ${stats.failed}, Pending: ${stats.pending}, To Process: ${leftToProcess}`);
 
-        if (this.userIdsToProcess.length === 0) {
+        if (leftToProcess === 0) {
             this.log('No new users to process. Campaign is considered complete.');
             this.status = 'completed';
             this.options.onFinish(this.status, this.progress);
             return;
         }
 
-        // Добавляем в БД только новых пользователей (тех, кого нет в processedSet и нет в pending)
-        const pendingRecipients = await campaignRecipientStore.getPendingRecipients(this.options.campaign.id);
-        const pendingSet = new Set(pendingRecipients.map(r => r.userId));
-        
-        const newUsersToQueue = this.userIdsToProcess.filter(id => !pendingSet.has(id));
-        
-        if (newUsersToQueue.length > 0) {
-            this.log(`Found ${newUsersToQueue.length} new users to add to DB queue...`);
-            const recipientsToQueue = newUsersToQueue.map(userId => ({ 
-                campaignId: this.options.campaign.id, 
-                userId, 
-                status: 'pending' as const 
-            }));
-            await campaignRecipientStore.bulkAdd(recipientsToQueue);
-        } else {
-            this.log('All users are already in the queue, resuming from existing progress...');
-        }
-
         this.log('Starting distribution...');
         this.status = 'running';
         this.limiter.start();
-        this.runLoop();
+        this.options.onProgress(this.progress);
+        void this.runParts(plan, processedSet, pendingSet, generation).catch((error) => {
+            if (generation !== this.generation) return;
+            this.fail(error);
+        });
 
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        this.log(`Failed to start campaign: ${message}`);
-        this.status = 'failed';
-        this.options.onError(error as Error, this.progress);
+        if (generation !== this.generation) return;
+        this.fail(error);
     }
+  }
+
+  private fail(error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    this.log(`Campaign failed: ${message}`);
+    this.status = 'failed';
+    this.shouldStop = true;
+    this.limiter.stop();
+    this.options.onError(error as Error, this.progress);
   }
 
   /**
@@ -147,18 +175,71 @@ export class CampaignRunner {
     }
   }
 
-  private async runLoop() {
-    this.log(`Starting run loop with ${this.userIdsToProcess.length} users.`);
-    
-    for (let i = 0; i < this.userIdsToProcess.length; i += CHUNK_SIZE) {
-        if (this.status !== 'running' || this.shouldStop) {
+  /** Запуск всё ещё актуален и не поставлен на паузу/остановлен. */
+  private isActive(generation: number) {
+    return generation === this.generation && this.status === 'running' && !this.shouldStop;
+  }
+
+  private async runParts(plan: PartPlan[], processedSet: Set<number>, pendingSet: Set<number>, generation: number) {
+    const campaignId = this.options.campaign.id;
+
+    for (let partIndex = 0; partIndex < plan.length; partIndex++) {
+        if (!this.isActive(generation)) return;
+
+        const { userBase, userIds } = plan[partIndex];
+        const partProgress = this.progress.parts?.[partIndex];
+        const toProcess = userIds.filter(id => !processedSet.has(id));
+
+        if (toProcess.length === 0) {
+            this.log(`Part ${partIndex + 1}/${plan.length} "${userBase.name}" is already sent, skipping.`);
+            if (partProgress) partProgress.status = 'completed';
+            continue;
+        }
+
+        this.log(`Part ${partIndex + 1}/${plan.length} "${userBase.name}": ${toProcess.length} users to process.`);
+        if (partProgress) partProgress.status = 'running';
+
+        // В очередь в БД попадают только получатели текущей части.
+        const newUsersToQueue = toProcess.filter(id => !pendingSet.has(id));
+        if (newUsersToQueue.length > 0) {
+            await campaignRecipientStore.bulkAdd(
+                newUsersToQueue.map(userId => ({ campaignId, userId, status: 'pending' as const })),
+            );
+        }
+        if (!this.isActive(generation)) return;
+        this.options.onProgress(this.progress);
+
+        const finished = await this.sendUsers(toProcess, partProgress, generation);
+        if (!finished) return;
+
+        if (partProgress) partProgress.status = 'completed';
+        this.log(`Part ${partIndex + 1}/${plan.length} "${userBase.name}" completed, saving progress.`);
+        // Прогресс части сохраняем до того, как начнётся следующая.
+        await this.options.onPartComplete?.(this.progress);
+    }
+
+    // This code only runs if every part completes without being interrupted.
+    if (this.isActive(generation)) {
+        this.log('Campaign completed.');
+        this.status = 'completed';
+        this.limiter.stop();
+        this.options.onFinish(this.status, this.progress);
+    }
+  }
+
+  /** Рассылает список получателей. Возвращает false, если рассылку прервали. */
+  private async sendUsers(userIds: number[], partProgress: CampaignPartProgress | undefined, generation: number): Promise<boolean> {
+    const campaignId = this.options.campaign.id;
+
+    for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+        if (!this.isActive(generation)) {
             this.log(`Loop halted. Status: ${this.status}, shouldStop: ${this.shouldStop}`);
             // For pause/stop, we just exit the loop. 
             // The state is handled by the pause() and stop() methods.
-            return;
+            return false;
         }
         
-        const chunk = this.userIdsToProcess.slice(i, i + CHUNK_SIZE);
+        const chunk = userIds.slice(i, i + CHUNK_SIZE);
         this.log(`Processing chunk of ${chunk.length} users (offset: ${i}).`);
 
         const promises = chunk.map(userId => {
@@ -175,14 +256,16 @@ export class CampaignRunner {
             return this.limiter.enqueue(method, payload)
                 .then(() => {
                     this.progress.sentCount++;
-                    return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'success');
+                    if (partProgress) partProgress.processedCount++;
+                    return campaignRecipientStore.updateStatus(campaignId, userId, 'success');
                 })
                 .catch((error) => {
                     if (error instanceof LimiterStoppedError) return;
                     this.progress.failedCount++;
+                    if (partProgress) partProgress.processedCount++;
                     const errorMsg = error instanceof TelegramApiError ? error.description : error.message;
                     this.log(`Failed to send to ${userId}: ${errorMsg}`);
-                    return campaignRecipientStore.updateStatus(this.options.campaign.id, userId, 'failed', errorMsg);
+                    return campaignRecipientStore.updateStatus(campaignId, userId, 'failed', errorMsg);
                 })
                 .finally(() => {
                     // Только обновляем прогресс, если не остановлены
@@ -193,21 +276,9 @@ export class CampaignRunner {
         });
 
         await Promise.allSettled(promises);
-        
-        // Дополнительная проверка после обработки чанка
-        if (this.status !== 'running' || this.shouldStop) {
-            this.log(`Stopping after chunk processing. Status: ${this.status}, shouldStop: ${this.shouldStop}`);
-            return;
-        }
     }
 
-    // This code only runs if the loop completes without being interrupted.
-    if (this.status === 'running' && !this.shouldStop) {
-        this.log('Campaign completed.');
-        this.status = 'completed';
-        this.limiter.stop();
-        this.options.onFinish(this.status, this.progress);
-    }
+    return this.isActive(generation);
   }
 
   private prepareMessagePayload(userId: number) {

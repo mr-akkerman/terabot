@@ -47,6 +47,12 @@ interface BaseUserBase {
   lastCheckStatus?: 'success' | 'failed' | 'pending';
   lastCheckedAt?: Date;
   createdAt: Date;
+  // Связка частей: база, разбитая при создании на несколько, хранится как
+  // обычные базы с общим groupId. Рассылку можно запустить и по одной части,
+  // и по всей группе (части идут по порядку partIndex).
+  groupId?: string;
+  groupName?: string; // Общее имя группы (имя части = groupName_partIndex)
+  partIndex?: number; // Номер части в группе, с 1
 }
 
 export interface StaticUserBase extends BaseUserBase {
@@ -95,6 +101,19 @@ export interface CampaignProgress {
   sentCount: number;
   failedCount: number;
   results: SendResult[];
+  /** Прогресс по частям — только для рассылки по группе баз. */
+  parts?: CampaignPartProgress[];
+}
+
+/**
+ * Прогресс одной части группы баз внутри рассылки.
+ */
+export interface CampaignPartProgress {
+  userBaseId: string;
+  name: string;
+  totalUsers: number; // Получателей в части (без тех, кто уже был в предыдущих частях)
+  processedCount: number; // Отправлено + ошибки
+  status: 'pending' | 'running' | 'completed';
 }
 
 /**
@@ -106,7 +125,8 @@ export interface Campaign {
   description?: string; // Описание
   botId: string; // ID связанного бота
   message: CampaignMessage; // Сообщение для рассылки
-  userBaseId: string; // ID связанной базы пользователей
+  userBaseId: string; // ID связанной базы пользователей (пусто, если выбрана группа)
+  userBaseGroupId?: string; // ID группы баз: рассылка идёт по всем её частям по очереди
   sendSettings: SendSettings; // Настройки отправки
   createdAt: Date; // Дата создания
   status: 'draft' | 'loading-users' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped' | 'idle'; // Текущий статус

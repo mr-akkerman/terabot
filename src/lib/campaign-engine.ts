@@ -1,5 +1,6 @@
 import { CampaignRunner } from '@/lib/campaign-runner';
-import type { Campaign, CampaignProgress } from '@/types';
+import type { Campaign, CampaignProgress, UserBase } from '@/types';
+import { getGroupParts } from '@/lib/user-ids';
 import { campaignStore, userBaseStore, botStore, campaignRecipientStore } from '@/lib/db';
 
 // Не пишем прогресс в IndexedDB на каждое сообщение — UI всё равно опрашивает БД раз в 2 секунды.
@@ -115,8 +116,16 @@ export class CampaignEngine {
     const campaign = await campaignStore.get(campaignId);
     if (!campaign) throw new Error('Campaign not found');
 
-    const userBase = await userBaseStore.get(campaign.userBaseId);
-    if (!userBase) throw new Error('User base not found for campaign');
+    let userBases: UserBase[];
+    if (campaign.userBaseGroupId) {
+      // Рассылка по группе: все её части по порядку
+      userBases = getGroupParts(await userBaseStore.getAll(), campaign.userBaseGroupId);
+      if (userBases.length === 0) throw new Error('User base group not found for campaign');
+    } else {
+      const userBase = await userBaseStore.get(campaign.userBaseId);
+      if (!userBase) throw new Error('User base not found for campaign');
+      userBases = [userBase];
+    }
 
     const bot = await botStore.get(campaign.botId);
     if (!bot) throw new Error('Bot not found for campaign');
@@ -136,10 +145,16 @@ export class CampaignEngine {
 
     const runner: CampaignRunner = new CampaignRunner({
       campaign,
-      userBase,
+      userBases,
       bot,
       onProgress: (progress) => {
         if (isCurrent()) this.scheduleProgressFlush(campaignId, progress);
+      },
+      onPartComplete: async (progress) => {
+        if (!isCurrent()) return;
+        // Часть разослана — пишем прогресс в БД сразу, не дожидаясь таймера
+        this.pendingProgress.set(campaignId, progress);
+        await this.flushProgress(campaignId);
       },
       onFinish: (status, finalProgress) => {
         console.log(`[Engine] Finished campaign ${campaignId} with status: ${status}`);
